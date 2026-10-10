@@ -8,11 +8,12 @@ interface TaskModalProps {
   onClose: () => void
 }
 
-function choiceContent(content: Record<string, unknown>): { prompt: string, options: string[] } | null {
+function choiceContent(content: Record<string, unknown>): { context?: string, prompt: string, options: string[] } | null {
+  const context = content.context
   const prompt = content.prompt
   const options = content.options
-  return typeof prompt === 'string' && Array.isArray(options) && options.every((item) => typeof item === 'string')
-    ? { prompt, options }
+  return (context === undefined || typeof context === 'string') && typeof prompt === 'string' && Array.isArray(options) && options.every((item) => typeof item === 'string')
+    ? { context, prompt, options }
     : null
 }
 
@@ -52,6 +53,7 @@ export function TaskModal({ api, task, onResult, onClose }: TaskModalProps) {
     <section className="task-modal panel" role="dialog" aria-modal="true" aria-labelledby="task-title">
       <span className="eyebrow">Задание из игровой сцены</span><h2 id="task-title">{task.title}</h2>
       {!choice ? <p className="error">Этот тип задания пока не поддержан в игровом срезе.</p> : <>
+        {choice.context && <p className="task-context">{choice.context}</p>}
         <p>{choice.prompt}</p>
         <div className="choice-list">{choice.options.map((option) => <label key={option}><input type="radio" name="answer" value={option} checked={answer === option} onChange={() => { pendingRequestId.current = null; setAnswer(option); setResult(null) }} disabled={busy || Boolean(result?.is_correct)} /> {option}</label>)}</div>
         {result && <p className={result.is_correct ? 'success' : 'error'} role="status">{result.is_correct ? 'Мир реагирует: задача завершена.' : 'Мир реагирует: можно попробовать ещё раз.'}<br />{result.explanation}</p>}

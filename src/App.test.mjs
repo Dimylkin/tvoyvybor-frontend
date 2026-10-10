@@ -23,7 +23,7 @@ const user = { id: 1, email: 'player@example.com', role: 'user' }
 const direction = { id: 3, slug: 'backend', title: 'Backend', description: 'Серверная разработка' }
 const scenario = { id: 7, direction_id: 3, slug: 'first', title: 'Первый сценарий', description: 'Проверка сервера', state: 'active' }
 
-function mockApi({ login = false, meStatus = 200 } = {}) {
+function mockApi({ login = false, meStatus = 200, directions = [direction], scenarios = [scenario], progress = [{ scenario_id: 7, state: 'completed' }] } = {}) {
   const requests = []
   globalThis.fetch = async (input, init) => {
     const path = new URL(String(input), 'http://localhost:5173').pathname
@@ -31,9 +31,9 @@ function mockApi({ login = false, meStatus = 200 } = {}) {
     requests.push({ path, authorization })
     if (path === '/api/auth/login' && login) return Response.json({ access_token: 'test-token', token_type: 'bearer' })
     if (path === '/api/auth/me') return meStatus === 401 ? Response.json({ detail: 'Invalid authentication credentials' }, { status: 401 }) : Response.json(user)
-    if (path === '/api/directions') return Response.json([direction])
-    if (path === '/api/scenarios') return Response.json([scenario])
-    if (path === '/api/progress') return Response.json([{ scenario_id: 7, state: 'completed' }])
+    if (path === '/api/directions') return Response.json(directions)
+    if (path === '/api/scenarios') return Response.json(scenarios)
+    if (path === '/api/progress') return Response.json(progress)
     throw new Error(`Unexpected API request: ${path}`)
   }
   return requests
@@ -74,6 +74,31 @@ test('saved token restores the session and server status after remount', async (
   assert.ok(requests.some((request) => request.path === '/api/progress' && request.authorization === 'Bearer saved-token'))
 })
 
+test('hub exposes all three directions and lets a player revisit a completed location', async () => {
+  localStorage.setItem('tvoyvybor.accessToken', 'saved-token')
+  window.location.hash = '/hub'
+  mockApi({
+    directions: [
+      direction,
+      { id: 4, slug: 'frontend', title: 'Frontend', description: 'Интерфейсы' },
+      { id: 5, slug: 'analytics', title: 'Аналитика', description: 'Работа с данными' },
+    ],
+    scenarios: [
+      { ...scenario, id: 8, title: 'API без сюрпризов', state: 'completed' },
+      { ...scenario, id: 9, direction_id: 4, title: 'Кнопка на месте', state: 'available' },
+      { ...scenario, id: 10, direction_id: 5, title: 'Отчёт без магии', state: 'active' },
+    ],
+    progress: [{ scenario_id: 8, state: 'completed' }, { scenario_id: 9, state: 'available' }, { scenario_id: 10, state: 'active' }],
+  })
+  render(React.createElement(App))
+
+  assert.ok(await screen.findByRole('heading', { name: 'Backend' }))
+  assert.ok(screen.getByRole('heading', { name: 'Frontend' }))
+  assert.ok(screen.getByRole('heading', { name: 'Аналитика' }))
+  assert.equal(screen.getByRole('link', { name: 'Открыть' }).getAttribute('href'), '#/game/8')
+  assert.equal(screen.getAllByRole('link', { name: 'Играть' }).length, 2)
+})
+
 test('401 while restoring the session clears the token and opens login', async () => {
   localStorage.setItem('tvoyvybor.accessToken', 'expired-token')
   window.location.hash = '/hub'
@@ -105,6 +130,28 @@ test('choice modal keeps an incorrect answer retryable and shows server feedback
   assert.match(sent.request_id, /^attempt-|^[0-9a-f-]{36}$/)
   assert.equal(results[0].reaction, 'retry')
   assert.ok(screen.getByRole('button', { name: 'Проверить решение' }))
+})
+
+test('choice modal displays validated plot context from server content', () => {
+  const api = new ApiClient('/api', () => 'token', () => {}, async () => Response.json({}))
+  render(React.createElement(TaskModal, {
+    api,
+    task: {
+      id: 11,
+      kind: 'choice',
+      title: 'Кнопка исчезла',
+      content: {
+        context: 'Генеральный директор открыл сайт на планшете, и кнопка решила уйти в отпуск.',
+        prompt: 'Что проверить первым?',
+        options: ['Адаптивную вёрстку', 'Цвет кружки'],
+      },
+    },
+    onResult: () => {},
+    onClose: () => {},
+  }))
+
+  assert.ok(screen.getByText('Генеральный директор открыл сайт на планшете, и кнопка решила уйти в отпуск.'))
+  assert.ok(screen.getByText('Что проверить первым?'))
 })
 
 test('game screen opens a task from the scene and shows completed server feedback', async () => {
@@ -141,6 +188,7 @@ test('completed game route restores server state without starting the scenario a
   render(React.createElement(GameScreen, { api, scenarioId: 7, Game: Scene }))
 
   assert.ok(await screen.findByText('Все задания этой локации завершены.'))
+  assert.equal(screen.getByRole('link', { name: 'Вернуться в хаб' }).getAttribute('href'), '#/hub')
   assert.deepEqual(calls, [{ path: '/api/scenarios/7', method: undefined }])
 })
 

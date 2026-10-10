@@ -137,7 +137,7 @@ function HubScreen({ api }: { api: ApiClient }) {
           <h2>{direction.title}</h2><p>{direction.description}</p>
           {scenarios.length === 0 ? <p className="muted">Сценарии пока недоступны.</p> : <ul className="scenario-list">{scenarios.map((scenario) => {
             const state = data.progress.find((item) => item.scenario_id === scenario.id)?.state ?? scenario.state
-            return <li key={scenario.id}><span><strong>{scenario.title}</strong><small>{scenario.description}</small></span><span className="scenario-actions"><span className={`status status-${state}`}>{stateLabels[state]}</span>{state !== 'locked' && state !== 'completed' && <a className="play-link" href={`#/game/${scenario.id}`}>Играть</a>}</span></li>
+            return <li key={scenario.id}><span><strong>{scenario.title}</strong><small>{scenario.description}</small></span><span className="scenario-actions"><span className={`status status-${state}`}>{stateLabels[state]}</span>{state !== 'locked' && <a className="play-link" href={`#/game/${scenario.id}`}>{state === 'completed' ? 'Открыть' : 'Играть'}</a>}</span></li>
           })}</ul>}
         </section>
       })}</div>}
