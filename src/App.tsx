@@ -1,16 +1,20 @@
-import React, { useEffect, useMemo, useState } from 'react'
-import { ApiClient, ApiError, type Achievement, type Direction, type InterestEvent, type InterestProfile, type Progress, type Recommendation, type Scenario, type ScenarioState, type User } from './api'
+import React, { useCallback, useEffect, useMemo, useState } from 'react'
+import { ApiClient, ApiError, type Achievement, type AttemptResult, type Direction, type InterestEvent, type InterestProfile, type Progress, type Recommendation, type Scenario, type ScenarioDetail, type ScenarioState, type Task, type User } from './api'
+import { GameCanvas } from './GameCanvas'
+import { TaskModal } from './TaskModal'
 import './style.css'
 
 const tokenKey = 'tvoyvybor.accessToken'
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || '/api'
-type Route = 'login' | 'register' | 'hub' | 'profile' | 'results'
+type Route = 'login' | 'register' | 'hub' | 'profile' | 'results' | 'game'
 
 function currentRoute(): Route {
   const path = window.location.hash.slice(2)
+  if (path.startsWith('game/')) return 'game'
   return path === 'register' || path === 'hub' || path === 'profile' || path === 'results' ? path : 'login'
 }
 function navigate(route: Route) { window.location.hash = `/${route}` }
+function gameScenarioId() { const value = Number(window.location.hash.slice(7)); return Number.isInteger(value) && value > 0 ? value : null }
 function errorMessage(error: unknown): string {
   if (error instanceof ApiError && error.status === 401) return 'Сессия завершилась. Войдите снова.'
   return error instanceof Error ? error.message : 'Не удалось загрузить данные.'
@@ -81,7 +85,7 @@ function App() {
       </nav>
       <div className="account"><span>{user.email}</span><button type="button" onClick={logout}>Выйти</button></div>
     </header>
-    {route === 'profile' ? <ProfileScreen api={api} /> : route === 'results' ? <ResultsScreen api={api} /> : <HubScreen api={api} />}
+    {route === 'profile' ? <ProfileScreen api={api} /> : route === 'results' ? <ResultsScreen api={api} /> : route === 'game' && gameScenarioId() ? <GameScreen api={api} scenarioId={gameScenarioId()!} /> : <HubScreen api={api} />}
   </div>
 }
 
@@ -133,10 +137,53 @@ function HubScreen({ api }: { api: ApiClient }) {
           <h2>{direction.title}</h2><p>{direction.description}</p>
           {scenarios.length === 0 ? <p className="muted">Сценарии пока недоступны.</p> : <ul className="scenario-list">{scenarios.map((scenario) => {
             const state = data.progress.find((item) => item.scenario_id === scenario.id)?.state ?? scenario.state
-            return <li key={scenario.id}><span><strong>{scenario.title}</strong><small>{scenario.description}</small></span><span className={`status status-${state}`}>{stateLabels[state]}</span></li>
+            return <li key={scenario.id}><span><strong>{scenario.title}</strong><small>{scenario.description}</small></span><span className="scenario-actions"><span className={`status status-${state}`}>{stateLabels[state]}</span>{state !== 'locked' && state !== 'completed' && <a className="play-link" href={`#/game/${scenario.id}`}>Играть</a>}</span></li>
           })}</ul>}
         </section>
       })}</div>}
+  </main>
+}
+
+export function GameScreen({ api, scenarioId, Game = GameCanvas }: { api: ApiClient, scenarioId: number, Game?: typeof GameCanvas }) {
+  const [scenario, setScenario] = useState<ScenarioDetail | null>(null)
+  const [task, setTask] = useState<Task | null>(null)
+  const [completedTaskIds, setCompletedTaskIds] = useState<Set<number>>(new Set())
+  const [error, setError] = useState('')
+  const [feedback, setFeedback] = useState<AttemptResult | null>(null)
+  const [revision, setRevision] = useState(0)
+
+  useEffect(() => {
+    let active = true
+    setScenario(null); setError(''); setFeedback(null)
+    api.scenario(scenarioId).then(async (detail) => {
+      if (detail.state === 'available') await api.startScenario(scenarioId)
+      if (active) {
+        setScenario(detail)
+        setCompletedTaskIds(new Set(detail.completed_task_ids))
+      }
+    }).catch((cause) => { if (active) setError(errorMessage(cause)) })
+    return () => { active = false }
+  }, [api, scenarioId, revision])
+
+  const openTask = useCallback(() => {
+    const playable = scenario?.tasks.find((item) => item.kind === 'choice' && !completedTaskIds.has(item.id))
+    if (playable) setTask(playable)
+    else if (!scenario?.tasks.some((item) => item.kind === 'choice')) setError('В этом сценарии пока нет поддерживаемого задания.')
+  }, [completedTaskIds, scenario])
+
+  function handleResult(result: AttemptResult) {
+    setFeedback(result)
+    if (result.is_correct) setCompletedTaskIds((current) => new Set(current).add(result.task_id))
+  }
+
+  if (error) return <main className="content"><LoadState error={error} retry={() => setRevision((value) => value + 1)} /></main>
+  if (!scenario) return <main className="content"><p>Загружаем игровую локацию…</p></main>
+  return <main className="content game-page">
+    <div className="page-heading"><span className="eyebrow">Игровая локация</span><h1>{scenario.title}</h1><p>{scenario.description}</p><a href="#/hub">Вернуться в хаб</a></div>
+    <Game scenarioTitle={scenario.title} onInteract={openTask} />
+    <section className="panel game-instructions"><h2>Как пройти задание</h2><p>Подойдите к NPC и нажмите <kbd>E</kbd>. Вопрос откроется в обычном React-интерфейсе, а результат сохранится на сервере.</p>{scenario.tasks.some((item) => item.kind === 'choice' && !completedTaskIds.has(item.id)) ? <button type="button" onClick={openTask}>Открыть задание</button> : <p className="success">Все задания этой локации завершены.</p>}</section>
+    {feedback && <section className="panel world-feedback" role="status"><h2>{feedback.is_correct ? 'NPC доволен решением' : 'NPC просит проверить ответ'}</h2><p>{feedback.explanation}</p><p className="muted">Сохранённый статус сценария: {stateLabels[feedback.scenario_state]}.</p></section>}
+    {task && <TaskModal api={api} task={task} onResult={handleResult} onClose={() => setTask(null)} />}
   </main>
 }
 

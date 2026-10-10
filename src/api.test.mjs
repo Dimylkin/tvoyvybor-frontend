@@ -46,3 +46,20 @@ test('network failure can be retried without invalidating the saved token', asyn
   await assert.rejects(client.me(), /Не удалось связаться с сервером/)
   assert.equal(unauthorized, 0)
 })
+
+test('game requests start a scenario and submit an idempotent attempt', async () => {
+  const calls = []
+  const client = new ApiClient('/api', () => 'saved-token', () => {}, async (input, init) => {
+    calls.push({ url: String(input), method: init?.method, body: init?.body, authorization: new Headers(init?.headers).get('Authorization') })
+    if (String(input).endsWith('/scenarios/7/start')) return Response.json({ scenario_id: 7, state: 'active' })
+    return Response.json({ id: 4, task_id: 9, is_correct: false, reaction: 'retry', explanation: 'Попробуйте ещё раз.', scenario_state: 'active' }, { status: 201 })
+  })
+
+  assert.deepEqual(await client.startScenario(7), { scenario_id: 7, state: 'active' })
+  const result = await client.submitAttempt(9, '3d1b3b10-9cae-4f10-a064-23fe0ef9a0b5', 'POST')
+  assert.equal(result.reaction, 'retry')
+  assert.deepEqual(calls, [
+    { url: '/api/scenarios/7/start', method: 'PUT', body: undefined, authorization: 'Bearer saved-token' },
+    { url: '/api/tasks/9/attempts', method: 'POST', body: '{"request_id":"3d1b3b10-9cae-4f10-a064-23fe0ef9a0b5","answer":"POST"}', authorization: 'Bearer saved-token' },
+  ])
+})
