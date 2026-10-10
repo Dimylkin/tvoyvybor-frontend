@@ -27,6 +27,27 @@ export interface Progress {
   state: ScenarioState
 }
 
+export interface Task {
+  id: number
+  kind: string
+  title: string
+  content: Record<string, unknown>
+}
+
+export interface ScenarioDetail extends Scenario {
+  tasks: Task[]
+  completed_task_ids: number[]
+}
+
+export interface AttemptResult {
+  id: number
+  task_id: number
+  is_correct: boolean
+  reaction: 'retry' | 'completed'
+  explanation: string
+  scenario_state: ScenarioState
+}
+
 export interface InterestProfile {
   direction_scores: Record<string, number>
   event_count: number
@@ -114,6 +135,11 @@ export class ApiClient {
   me(): Promise<User> { return this.request('/auth/me') }
   directions(): Promise<Direction[]> { return this.request('/directions') }
   scenarios(): Promise<Scenario[]> { return this.request('/scenarios') }
+  scenario(id: number): Promise<ScenarioDetail> { return this.request(`/scenarios/${id}`) }
+  startScenario(id: number): Promise<Progress> { return this.request(`/scenarios/${id}/start`, { method: 'PUT' }) }
+  submitAttempt(taskId: number, requestId: string, answer: string): Promise<AttemptResult> {
+    return this.request(`/tasks/${taskId}/attempts`, { method: 'POST', body: JSON.stringify({ request_id: requestId, answer }) })
+  }
   progress(): Promise<Progress[]> { return this.request('/progress') }
   interestProfile(): Promise<InterestProfile> { return this.request('/interest-profile') }
   interestEvents(): Promise<InterestEvent[]> { return this.request('/interest-events') }
