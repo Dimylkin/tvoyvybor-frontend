@@ -23,14 +23,14 @@ const user = { id: 1, email: 'player@example.com', role: 'user' }
 const direction = { id: 3, slug: 'backend', title: 'Backend', description: 'Серверная разработка' }
 const scenario = { id: 7, direction_id: 3, slug: 'first', title: 'Первый сценарий', description: 'Проверка сервера', state: 'active' }
 
-function mockApi({ login = false, meStatus = 200, directions = [direction], scenarios = [scenario], progress = [{ scenario_id: 7, state: 'completed' }] } = {}) {
+function mockApi({ login = false, me = user, meStatus = 200, directions = [direction], scenarios = [scenario], progress = [{ scenario_id: 7, state: 'completed' }] } = {}) {
   const requests = []
   globalThis.fetch = async (input, init) => {
     const path = new URL(String(input), 'http://localhost:5173').pathname
     const authorization = new Headers(init?.headers).get('Authorization')
     requests.push({ path, authorization })
     if (path === '/api/auth/login' && login) return Response.json({ access_token: 'test-token', token_type: 'bearer' })
-    if (path === '/api/auth/me') return meStatus === 401 ? Response.json({ detail: 'Invalid authentication credentials' }, { status: 401 }) : Response.json(user)
+    if (path === '/api/auth/me') return meStatus === 401 ? Response.json({ detail: 'Invalid authentication credentials' }, { status: 401 }) : Response.json(me)
     if (path === '/api/directions') return Response.json(directions)
     if (path === '/api/scenarios') return Response.json(scenarios)
     if (path === '/api/progress') return Response.json(progress)
@@ -107,6 +107,28 @@ test('401 while restoring the session clears the token and opens login', async (
 
   await waitFor(() => assert.ok(screen.getByRole('heading', { name: 'Войти в игру' })))
   assert.equal(localStorage.getItem('tvoyvybor.accessToken'), null)
+})
+
+test('admin session exposes the protected content screen', async () => {
+  localStorage.setItem('tvoyvybor.accessToken', 'admin-token')
+  window.location.hash = '/admin'
+  mockApi({
+    me: { ...user, role: 'admin' },
+    scenarios: [],
+  })
+  const originalFetch = globalThis.fetch
+  globalThis.fetch = async (input, init) => {
+    const path = new URL(String(input), 'http://localhost:5173').pathname
+    if (path === '/api/auth/me') return Response.json({ ...user, role: 'admin' })
+    if (path === '/api/directions') return Response.json([direction])
+    if (path === '/api/admin/scenarios') return Response.json([])
+    return originalFetch(input, init)
+  }
+  render(React.createElement(App))
+
+  assert.ok(await screen.findByRole('heading', { name: 'Администрирование' }))
+  assert.ok(screen.getByRole('link', { name: 'Администрирование' }))
+  assert.ok(screen.getByText('Новый сценарий'))
 })
 
 test('choice modal keeps an incorrect answer retryable and shows server feedback', async () => {

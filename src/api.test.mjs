@@ -63,3 +63,25 @@ test('game requests start a scenario and submit an idempotent attempt', async ()
     { url: '/api/tasks/9/attempts', method: 'POST', body: '{"request_id":"3d1b3b10-9cae-4f10-a064-23fe0ef9a0b5","answer":"POST"}', authorization: 'Bearer saved-token' },
   ])
 })
+
+test('stage 7 report and publication requests match the server contract', async () => {
+  const calls = []
+  const client = new ApiClient('/api', () => 'saved-token', () => {}, async (input, init) => {
+    calls.push({ url: String(input), method: init?.method, body: init?.body })
+    return Response.json({})
+  })
+
+  await client.finalReport()
+  await client.setAdminScenarioPublication(7, true)
+  await client.setAdminScenarioPublication(7, false)
+  await client.setAdminTaskPublication(9, true)
+  await client.setAdminTaskPublication(9, false)
+
+  assert.deepEqual(calls, [
+    { url: '/api/final-report', method: undefined, body: undefined },
+    { url: '/api/admin/scenarios/7/publish', method: 'PUT', body: undefined },
+    { url: '/api/admin/scenarios/7/unpublish', method: 'PUT', body: undefined },
+    { url: '/api/admin/tasks/9/publish', method: 'PUT', body: undefined },
+    { url: '/api/admin/tasks/9/unpublish', method: 'PUT', body: undefined },
+  ])
+})

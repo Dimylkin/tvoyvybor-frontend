@@ -2,7 +2,7 @@
 * { box-sizing: border-box; }
 body { margin: 0; min-width: 320px; }
 a { color: #7cd9db; }
-button, input { font: inherit; }
+button, input, select, textarea { font: inherit; }
 button { cursor: pointer; border: 1px solid #405174; border-radius: .6rem; padding: .65rem .95rem; color: #e8eef9; background: #243250; }
 button:hover { background: #314364; }
 button:disabled { opacity: .6; cursor: wait; }
@@ -57,4 +57,10 @@ kbd { border: 1px solid #5a6b89; border-radius: .25rem; padding: .05rem .3rem; b
 .choice-list { display: grid; gap: .6rem; }
 .choice-list label { border: 1px solid #405174; border-radius: .6rem; padding: .7rem; cursor: pointer; }
 .success { color: #8be6b3; }
+.admin-form { display: grid; gap: 1rem; max-width: 46rem; }
+.admin-form label { display: grid; gap: .4rem; font-size: .9rem; font-weight: 650; }
+.admin-form input, .admin-form select, .admin-form textarea { width: 100%; border: 1px solid #556681; border-radius: .5rem; padding: .8rem; background: #101829; color: #e8eef9; }
+.admin-form textarea { min-height: 7rem; resize: vertical; }
+.admin-list > li { display: grid; gap: .65rem; }
+.admin-actions { display: flex; flex-wrap: wrap; gap: .55rem; }
 @media (max-width: 760px) { .auth-layout { grid-template-columns: 1fr; align-content: center; } .site-header { flex-wrap: wrap; } .site-header nav { order: 3; width: 100%; } .account span { display: none; } }

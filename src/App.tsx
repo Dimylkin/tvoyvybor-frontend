@@ -1,17 +1,17 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
-import { ApiClient, ApiError, type Achievement, type AttemptResult, type Direction, type InterestEvent, type InterestProfile, type Progress, type Recommendation, type Scenario, type ScenarioDetail, type ScenarioState, type Task, type User } from './api'
+import { ApiClient, ApiError, type Achievement, type AdminScenario, type AdminScenarioInput, type AdminTask, type AdminTaskInput, type AttemptResult, type Direction, type FinalReport, type InterestEvent, type InterestProfile, type Progress, type Recommendation, type Scenario, type ScenarioDetail, type ScenarioState, type Task, type User } from './api'
 import { GameCanvas } from './GameCanvas'
 import { TaskModal } from './TaskModal'
 import './style.css'
 
 const tokenKey = 'tvoyvybor.accessToken'
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || '/api'
-type Route = 'login' | 'register' | 'hub' | 'profile' | 'results' | 'game'
+type Route = 'login' | 'register' | 'hub' | 'profile' | 'results' | 'admin' | 'game'
 
 function currentRoute(): Route {
   const path = window.location.hash.slice(2)
   if (path.startsWith('game/')) return 'game'
-  return path === 'register' || path === 'hub' || path === 'profile' || path === 'results' ? path : 'login'
+  return path === 'register' || path === 'hub' || path === 'profile' || path === 'results' || path === 'admin' ? path : 'login'
 }
 function navigate(route: Route) { window.location.hash = `/${route}` }
 function gameScenarioId() { const value = Number(window.location.hash.slice(7)); return Number.isInteger(value) && value > 0 ? value : null }
@@ -82,10 +82,11 @@ function App() {
         <a href="#/hub" aria-current={route === 'hub' ? 'page' : undefined}>Хаб</a>
         <a href="#/profile" aria-current={route === 'profile' ? 'page' : undefined}>Профиль</a>
         <a href="#/results" aria-current={route === 'results' ? 'page' : undefined}>Результаты</a>
+        {user.role === 'admin' && <a href="#/admin" aria-current={route === 'admin' ? 'page' : undefined}>Администрирование</a>}
       </nav>
       <div className="account"><span>{user.email}</span><button type="button" onClick={logout}>Выйти</button></div>
     </header>
-    {route === 'profile' ? <ProfileScreen api={api} /> : route === 'results' ? <ResultsScreen api={api} /> : route === 'game' && gameScenarioId() ? <GameScreen api={api} scenarioId={gameScenarioId()!} /> : <HubScreen api={api} />}
+    {route === 'profile' ? <ProfileScreen api={api} /> : route === 'results' ? <ResultsScreen api={api} /> : route === 'admin' ? user.role === 'admin' ? <AdminScreen api={api} /> : <main className="content"><section className="panel"><h1>Нет доступа</h1><p>Управление контентом доступно только администраторам.</p></section></main> : route === 'game' && gameScenarioId() ? <GameScreen api={api} scenarioId={gameScenarioId()!} /> : <HubScreen api={api} />}
   </div>
 }
 
@@ -208,22 +209,101 @@ function ProfileScreen({ api }: { api: ApiClient }) {
 }
 
 function ResultsScreen({ api }: { api: ApiClient }) {
-  const [data, setData] = useState<{ directions: Direction[], recommendation: Recommendation | null, achievements: Achievement[], scenarios: Scenario[] } | null>(null)
+  const [data, setData] = useState<{ report: FinalReport, recommendation: Recommendation | null, achievements: Achievement[], scenarios: Scenario[] } | null>(null)
   const [error, setError] = useState('')
   const [revision, setRevision] = useState(0)
   useEffect(() => {
     let active = true
-    Promise.all([api.directions(), api.recommendation(), api.achievements(), api.scenarios()]).then(([directions, recommendation, achievements, scenarios]) => {
-      if (active) setData({ directions, recommendation, achievements, scenarios })
+    Promise.all([api.finalReport(), api.recommendation(), api.achievements(), api.scenarios()]).then(([report, recommendation, achievements, scenarios]) => {
+      if (active) setData({ report, recommendation, achievements, scenarios })
     }).catch((cause) => { if (active) setError(errorMessage(cause)) })
     return () => { active = false }
   }, [api, revision])
   return <main className="content">
-    <div className="page-heading"><span className="eyebrow">Промежуточный итог</span><h1>Результаты</h1><p>Рекомендация основана на ваших действиях и будет меняться по мере прохождения.</p></div>
+    <div className="page-heading"><span className="eyebrow">Отчёт отдела кадров, который никто не просил</span><h1>Результаты</h1><p>Это не психологическая диагностика, а объяснимое наблюдение за действиями в игре.</p></div>
     {error ? <LoadState error={error} retry={() => { setError(''); setRevision((value) => value + 1) }} /> : !data ? <p>Загружаем результаты…</p> : <>
-      <section className="panel"><h2>Рекомендация</h2>{data.recommendation ? <><h3>{data.directions.find((item) => item.id === data.recommendation?.direction_id)?.title ?? 'Направление'}</h3><p>{data.recommendation.explanation}</p></> : <p>Данных пока недостаточно. Рекомендация появится после первых верных решений.</p>}</section>
+      <section className="panel"><h2>Что мы увидели в игре</h2><p>Зафиксировано наблюдений: {data.report.event_count}. Завершено заданий: {data.report.completed_task_count}.</p>{data.report.observations.length === 0 ? <p>Пока недостаточно игровых фактов для выводов.</p> : <ul className="event-list">{data.report.observations.map((item) => <li key={item}>{item}</li>)}</ul>}</section>
+      <section className="panel"><h2>Направления для дальнейшего изучения</h2>{data.report.directions.length === 0 ? <p>Пройдите несколько заданий, чтобы появились первые ориентиры.</p> : <ul className="event-list">{data.report.directions.map((item) => <li key={item.direction_id}><strong>{item.title}</strong><p>{item.reason} Учтённый сигнал: {item.score}.</p></li>)}</ul>}{data.report.next_steps.length > 0 && <><h3>Что попробовать дальше</h3><ul className="event-list">{data.report.next_steps.map((item) => <li key={item}>{item}</li>)}</ul></>}</section>
+      <section className="panel"><h2>Текущая рекомендация</h2>{data.recommendation ? <p>{data.recommendation.explanation}</p> : <p>Данных пока недостаточно. Рекомендация появится после первых верных решений.</p>}</section>
       <section className="panel"><h2>Пройденные сценарии</h2><p>{data.scenarios.filter((item) => item.state === 'completed').length} из {data.scenarios.length}</p></section>
       <section className="panel"><h2>Достижения</h2>{data.achievements.length === 0 ? <p>Пока нет достижений.</p> : <ul className="event-list">{data.achievements.map((item) => <li key={item.slug}><strong>{item.title}</strong><p>{item.description}</p></li>)}</ul>}</section>
+    </>}
+  </main>
+}
+
+function parseObject(value: string, label: string): Record<string, unknown> {
+  const parsed: unknown = JSON.parse(value)
+  if (!parsed || Array.isArray(parsed) || typeof parsed !== 'object') throw new Error(`${label} должен быть JSON-объектом.`)
+  return parsed as Record<string, unknown>
+}
+
+function AdminScreen({ api }: { api: ApiClient }) {
+  const [data, setData] = useState<{ directions: Direction[], scenarios: AdminScenario[] } | null>(null)
+  const [selected, setSelected] = useState<number | null>(null)
+  const [tasks, setTasks] = useState<AdminTask[]>([])
+  const [error, setError] = useState('')
+  const [revision, setRevision] = useState(0)
+  const [scenarioForm, setScenarioForm] = useState<AdminScenarioInput>({ direction_id: 0, slug: '', title: '', description: '' })
+  const [editingScenario, setEditingScenario] = useState<number | null>(null)
+  const [taskForm, setTaskForm] = useState({ title: '', content: '{\n  "prompt": "",\n  "options": []\n}', validation: '{\n  "correct": ""\n}', correct_explanation: '', incorrect_explanation: '' })
+  const [editingTask, setEditingTask] = useState<number | null>(null)
+  useEffect(() => {
+    let active = true
+    Promise.all([api.adminDirections(), api.adminScenarios()]).then(([directions, scenarios]) => {
+      if (active) { setData({ directions, scenarios }); setScenarioForm((current) => ({ ...current, direction_id: current.direction_id || directions[0]?.id || 0 })) }
+    }).catch((cause) => { if (active) setError(errorMessage(cause)) })
+    return () => { active = false }
+  }, [api, revision])
+  useEffect(() => {
+    if (selected === null) { setTasks([]); return }
+    api.adminTasks(selected).then(setTasks).catch((cause) => setError(errorMessage(cause)))
+  }, [api, selected, revision])
+  const reload = () => setRevision((value) => value + 1)
+  async function createScenario(event: React.SubmitEvent<HTMLFormElement>) {
+    event.preventDefault(); setError('')
+    try { if (editingScenario === null) await api.createAdminScenario(scenarioForm); else await api.updateAdminScenario(editingScenario, scenarioForm); setEditingScenario(null); setScenarioForm((current) => ({ ...current, slug: '', title: '', description: '' })); reload() } catch (cause) { setError(errorMessage(cause)) }
+  }
+  async function createTask(event: React.SubmitEvent<HTMLFormElement>) {
+    event.preventDefault(); if (selected === null) return; setError('')
+    try {
+      const input: AdminTaskInput = { kind: 'choice', title: taskForm.title, content: parseObject(taskForm.content, 'Контент'), validation_config: parseObject(taskForm.validation, 'Конфигурация проверки'), correct_explanation: taskForm.correct_explanation, incorrect_explanation: taskForm.incorrect_explanation }
+      if (editingTask === null) await api.createAdminTask(selected, input); else await api.updateAdminTask(editingTask, input); setEditingTask(null); setTaskForm((current) => ({ ...current, title: '', correct_explanation: '', incorrect_explanation: '' })); reload()
+    } catch (cause) { setError(errorMessage(cause)) }
+  }
+  if (error && !data) return <main className="content"><LoadState error={error} retry={() => { setError(''); reload() }} /></main>
+  return <main className="content admin-page">
+    <div className="page-heading"><span className="eyebrow">Контент</span><h1>Администрирование</h1><p>Управляйте сценариями и заданиями существующего типа choice. Права проверяет сервер.</p></div>
+    {error && <p className="error" role="alert">{error}</p>}
+    {!data ? <p>Загружаем контент…</p> : <>
+      <section className="panel"><h2>{editingScenario === null ? 'Новый сценарий' : 'Редактирование сценария'}</h2><form className="admin-form" onSubmit={createScenario}>
+        <label>Направление<select required value={scenarioForm.direction_id} onChange={(event) => setScenarioForm({ ...scenarioForm, direction_id: Number(event.target.value) })}>{data.directions.map((item) => <option value={item.id} key={item.id}>{item.title}</option>)}</select></label>
+        <label>Slug<input required value={scenarioForm.slug} onChange={(event) => setScenarioForm({ ...scenarioForm, slug: event.target.value })} /></label>
+        <label>Название<input required value={scenarioForm.title} onChange={(event) => setScenarioForm({ ...scenarioForm, title: event.target.value })} /></label>
+        <label>Описание<textarea required value={scenarioForm.description} onChange={(event) => setScenarioForm({ ...scenarioForm, description: event.target.value })} /></label>
+        <button className="primary" type="submit" disabled={!scenarioForm.direction_id}>{editingScenario === null ? 'Создать сценарий' : 'Сохранить сценарий'}</button>
+      </form></section>
+      <section className="panel"><h2>Сценарии</h2><ul className="event-list admin-list">{data.scenarios.map((item) => <li key={item.id}>
+        <strong>{item.title}</strong><p>{item.description}</p><div className="admin-actions">
+          <button type="button" onClick={() => setSelected(item.id)}>Задания</button>
+          <button type="button" onClick={() => { setEditingScenario(item.id); setScenarioForm({ direction_id: item.direction_id, slug: item.slug, title: item.title, description: item.description }) }}>Изменить</button>
+          <button type="button" onClick={async () => { try { await api.setAdminScenarioPublication(item.id, !item.is_published); reload() } catch (cause) { setError(errorMessage(cause)) } }}>{item.is_published ? 'Снять с публикации' : 'Опубликовать'}</button>
+          <button type="button" onClick={async () => { try { await api.deleteAdminScenario(item.id); if (selected === item.id) setSelected(null); reload() } catch (cause) { setError(errorMessage(cause)) } }}>Удалить</button>
+        </div>
+      </li>)}</ul></section>
+      {selected !== null && <section className="panel"><h2>Задания сценария</h2><form className="admin-form" onSubmit={createTask}>
+        <label>Название<input required value={taskForm.title} onChange={(event) => setTaskForm({ ...taskForm, title: event.target.value })} /></label>
+        <label>Контент JSON<textarea required value={taskForm.content} onChange={(event) => setTaskForm({ ...taskForm, content: event.target.value })} /></label>
+        <label>Проверка JSON<textarea required value={taskForm.validation} onChange={(event) => setTaskForm({ ...taskForm, validation: event.target.value })} /></label>
+        <label>Объяснение верного ответа<textarea required value={taskForm.correct_explanation} onChange={(event) => setTaskForm({ ...taskForm, correct_explanation: event.target.value })} /></label>
+        <label>Объяснение неверного ответа<textarea required value={taskForm.incorrect_explanation} onChange={(event) => setTaskForm({ ...taskForm, incorrect_explanation: event.target.value })} /></label>
+        <button className="primary" type="submit">{editingTask === null ? 'Добавить choice-задание' : 'Сохранить задание'}</button>
+      </form><ul className="event-list admin-list">{tasks.map((item) => <li key={item.id}>
+        <strong>{item.title}</strong><p>{item.is_published ? 'Опубликовано' : 'Черновик'}</p><div className="admin-actions">
+          <button type="button" onClick={() => { setEditingTask(item.id); setTaskForm({ title: item.title, content: JSON.stringify(item.content, null, 2), validation: JSON.stringify(item.validation_config, null, 2), correct_explanation: item.correct_explanation, incorrect_explanation: item.incorrect_explanation }) }}>Изменить</button>
+          <button type="button" onClick={async () => { try { await api.setAdminTaskPublication(item.id, !item.is_published); reload() } catch (cause) { setError(errorMessage(cause)) } }}>{item.is_published ? 'Снять с публикации' : 'Опубликовать'}</button>
+          <button type="button" onClick={async () => { try { await api.deleteAdminTask(item.id); reload() } catch (cause) { setError(errorMessage(cause)) } }}>Удалить</button>
+        </div>
+      </li>)}</ul></section>}
     </>}
   </main>
 }
