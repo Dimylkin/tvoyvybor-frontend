@@ -4,6 +4,7 @@ export interface Rect { x: number, y: number, width: number, height: number }
 export interface WorldLocation {
   slug: string
   label: string
+  name: string
   campusPortal: { x: number, y: number, radius: number }
   npc: { x: number, y: number }
   exit: { x: number, y: number }
@@ -20,7 +21,7 @@ export interface WorldLocation {
 
 export const worldLocations: Record<string, WorldLocation> = {
   backend: {
-    slug: 'backend', label: 'Backend', campusPortal: { x: 182, y: 282, radius: 56 }, npc: { x: 606, y: 334 }, exit: { x: 114, y: 348 }, floor: { top: 205, bottom: 415 }, scale: { min: .11, max: .16 },
+    slug: 'backend', label: 'Backend', name: 'Борис Бэкендович', campusPortal: { x: 182, y: 282, radius: 56 }, npc: { x: 606, y: 334 }, exit: { x: 114, y: 348 }, floor: { top: 205, bottom: 415 }, scale: { min: .11, max: .16 },
     interior: '/content/backgrounds/interior_backend.png', npcBase: '/content/characters/npcs/npc_backend_base.png',
     portrait: '/content/characters/npcs/npc_backend_portrait.png',
     greeting: 'Я слежу, чтобы системы отвечали честно и вовремя. С чего начнём?',
@@ -32,7 +33,7 @@ export const worldLocations: Record<string, WorldLocation> = {
     walkable: [{ x: 82, y: 205, width: 636, height: 210 }], blocking: [{ x: 245, y: 220, width: 165, height: 95 }, { x: 455, y: 205, width: 110, height: 78 }],
   },
   frontend: {
-    slug: 'frontend', label: 'Frontend', campusPortal: { x: 401, y: 233, radius: 54 }, npc: { x: 598, y: 336 }, exit: { x: 116, y: 348 }, floor: { top: 205, bottom: 415 }, scale: { min: .11, max: .16 },
+    slug: 'frontend', label: 'Frontend', name: 'Фронтослав Пиксельевич', campusPortal: { x: 401, y: 233, radius: 54 }, npc: { x: 598, y: 336 }, exit: { x: 116, y: 348 }, floor: { top: 205, bottom: 415 }, scale: { min: .11, max: .16 },
     interior: '/content/backgrounds/interior_frontend.png', npcBase: '/content/characters/npcs/npc_frontend_base.png',
     portrait: '/content/characters/npcs/npc_frontend_portrait.png',
     greeting: 'Интерфейс — это разговор с человеком. Что вам интереснее в этом разговоре?',
@@ -44,7 +45,7 @@ export const worldLocations: Record<string, WorldLocation> = {
     walkable: [{ x: 82, y: 205, width: 636, height: 210 }], blocking: [{ x: 250, y: 225, width: 155, height: 85 }, { x: 445, y: 215, width: 120, height: 95 }],
   },
   analytics: {
-    slug: 'analytics', label: 'Analytics', campusPortal: { x: 636, y: 282, radius: 56 }, npc: { x: 593, y: 335 }, exit: { x: 116, y: 348 }, floor: { top: 205, bottom: 415 }, scale: { min: .11, max: .16 },
+    slug: 'analytics', label: 'Analytics', name: 'Анна Литикова', campusPortal: { x: 636, y: 282, radius: 56 }, npc: { x: 593, y: 335 }, exit: { x: 116, y: 348 }, floor: { top: 205, bottom: 415 }, scale: { min: .11, max: .16 },
     interior: '/content/backgrounds/interior_analytics.png', npcBase: '/content/characters/npcs/npc_analytics_base.png',
     portrait: '/content/characters/npcs/npc_analytics_portrait.png',
     greeting: 'За каждым числом есть история. Какую историю попробуем услышать?',

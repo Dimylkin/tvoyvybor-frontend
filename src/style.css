@@ -62,15 +62,18 @@ p { line-height: 1.6; }
 .dialogue-copy { display: grid; align-content: center; gap: .55rem; color: #f5f8ff; }
 .dialogue-copy p { margin: 0; line-height: 1.45; }
 .dialogue-copy strong { color: #8de7ff; }
-.dialogue-choices { position: absolute; z-index: 6; left: 3%; right: 3%; bottom: calc(3% + 168px); display: flex; flex-wrap: wrap; gap: .55rem; }
+.player-line { bottom: 35%; background: #193659f5; }
+.player-line img { object-position: center; }
+.npc-reaction { bottom: 3%; }
+.dialogue-choices { position: absolute; z-index: 6; right: 3%; bottom: calc(3% + 168px); width: min(330px, 45%); display: grid; gap: .55rem; }
 .dialogue-choices button { background: #eaf4ff; color: #12325b; border-color: #fff; font-weight: 700; }
 .action-prompt { position: absolute; z-index: 4; left: 50%; bottom: 4%; transform: translateX(-50%); display: flex; align-items: center; gap: .55rem; padding: .45rem .7rem; border-radius: .6rem; color: #102744; background: #fff; box-shadow: 0 .35rem 1rem #0008; font-size: .82rem; font-weight: 700; }
 .action-prompt kbd { color: #fff; border: 0; background: #245aa6; padding: .2rem .45rem; }
-.iris-transition { position: absolute; z-index: 8; inset: 0; pointer-events: none; background: #000; clip-path: circle(150% at 50% 50%); transition: clip-path .28s ease-in; }
-.iris-closing, .iris-loading { clip-path: circle(0 at 50% 50%); }
-.iris-opening { clip-path: circle(150% at 50% 50%); transition-timing-function: ease-out; }
+.iris-transition { position: absolute; z-index: 8; inset: 0; pointer-events: none; background: #06142b; opacity: 0; transition: opacity .28s ease-in; }
+.iris-closing, .iris-loading { opacity: 1; }
+.iris-opening { opacity: 0; transition-timing-function: ease-out; }
 .iris-idle { visibility: hidden; }
-.loading-card { position: absolute; z-index: 9; left: 50%; top: 50%; width: min(430px, 80%); transform: translate(-50%, -50%); padding: 1.2rem; border: 1px solid #405174; border-radius: .8rem; background: #172238; text-align: center; box-shadow: 0 1rem 3rem #0008; }
+.loading-card { position: absolute; z-index: 9; inset: 0; display: grid; place-content: center; gap: .8rem; padding: 1.2rem; background: #06142b; color: #eaf4ff; text-align: center; }
 .loading-card small { display: block; margin-top: .6rem; color: #afc0dc; }
 .campus-page { max-width: 920px; }
 .portal-buttons { display: flex; flex-wrap: wrap; gap: .7rem; }
