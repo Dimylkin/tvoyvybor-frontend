@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ApiClient, ApiError, type Achievement, type AdminScenario, type AdminScenarioInput, type AdminTask, type AdminTaskInput, type AttemptResult, type Direction, type FinalReport, type InterestEvent, type InterestProfile, type Progress, type Recommendation, type Scenario, type ScenarioDetail, type ScenarioState, type Task, type User } from './api'
 import { GameCanvas } from './GameCanvas'
 import { CampusCanvas } from './CampusCanvas'
@@ -17,15 +17,12 @@ function currentRoute(): Route {
   return path === 'register' || path === 'hub' || path === 'profile' || path === 'results' || path === 'admin' ? path : 'login'
 }
 function navigate(route: Route) { window.location.hash = `/${route}` }
-function gameScenarioId() { const value = Number(window.location.hash.slice(7)); return Number.isInteger(value) && value > 0 ? value : null }
 function buildingId() { const value = Number(window.location.hash.slice(11)); return Number.isInteger(value) && value > 0 ? value : null }
 function errorMessage(error: unknown): string {
   if (error instanceof ApiError && error.status === 401) return 'Сессия завершилась. Войдите снова.'
   return error instanceof Error ? error.message : 'Не удалось загрузить данные.'
 }
-const stateLabels: Record<ScenarioState, string> = {
-  locked: 'Закрыт', available: 'Доступен', active: 'Начат', completed: 'Завершён', skipped: 'Пропущен',
-}
+const stateLabels: Record<ScenarioState, string> = { locked: 'Закрыт', available: 'Доступен', active: 'Начат', completed: 'Завершён', skipped: 'Пропущен' }
 
 function App() {
   const [route, setRoute] = useState(currentRoute)
@@ -90,7 +87,7 @@ function App() {
       </nav>
       <div className="account"><span>{user.email}</span><button type="button" onClick={logout}>Выйти</button></div>
     </header>
-    {route === 'profile' ? <ProfileScreen api={api} /> : route === 'results' ? <ResultsScreen api={api} /> : route === 'admin' ? user.role === 'admin' ? <AdminScreen api={api} /> : <main className="content"><section className="panel"><h1>Нет доступа</h1><p>Управление контентом доступно только администраторам.</p></section></main> : route === 'game' && gameScenarioId() ? <GameScreen api={api} scenarioId={gameScenarioId()!} /> : route === 'building' && buildingId() ? <BuildingScreen api={api} directionId={buildingId()!} /> : <HubScreen api={api} user={user} onOnboardingComplete={setUser} />}
+    {route === 'profile' ? <ProfileScreen api={api} /> : route === 'results' ? <ResultsScreen api={api} /> : route === 'admin' ? user.role === 'admin' ? <AdminScreen api={api} /> : <main className="content"><section className="panel"><h1>Нет доступа</h1><p>Управление контентом доступно только администраторам.</p></section></main> : <HubScreen api={api} user={user} onOnboardingComplete={setUser} initialBuildingId={route === 'building' ? buildingId() : null} />}
   </div>
 }
 
@@ -122,36 +119,44 @@ function LoadState({ error, retry }: { error: string, retry: () => void }) {
   return <div className="panel"><p className="error" role="alert">{error}</p><button type="button" onClick={retry}>Повторить</button></div>
 }
 
-export function HubScreen({ api, user, onOnboardingComplete }: { api: ApiClient, user: User, onOnboardingComplete: (user: User) => void }) {
-  const [data, setData] = useState<{ directions: Direction[], scenarios: Scenario[], progress: Progress[] } | null>(null)
+export function HubScreen({ api, user, onOnboardingComplete, initialBuildingId = null }: { api: ApiClient, user: User, onOnboardingComplete: (user: User) => void, initialBuildingId?: number | null }) {
+  const [data, setData] = useState<Direction[] | null>(null)
   const [error, setError] = useState('')
   const [revision, setRevision] = useState(0)
   useEffect(() => {
     let active = true
-    Promise.all([api.directions(), api.scenarios(), api.progress()]).then(([directions, scenarios, progress]) => {
-      if (active) setData({ directions, scenarios, progress })
-    }).catch((cause) => { if (active) setError(errorMessage(cause)) })
+    api.directions().then((directions) => { if (active) setData(directions) }).catch((cause) => { if (active) setError(errorMessage(cause)) })
     return () => { active = false }
   }, [api, revision])
-  const knownDirections = data?.directions.filter((direction) => locationFor(direction.slug)) ?? []
-  const fallbackDirections = data?.directions.filter((direction) => !locationFor(direction.slug)) ?? []
+  const knownDirections = data?.filter((direction) => locationFor(direction.slug)) ?? []
   async function completeOnboarding() { onOnboardingComplete(await api.completeOnboarding()) }
-  return <main className="content campus-page">
-    <div className="page-heading"><span className="eyebrow">Свободный выбор направления</span><h1>Кампус</h1><p>Подойдите к корпусу, чтобы познакомиться с его мастером и выбрать сценарий.</p></div>
-    {error ? <LoadState error={error} retry={() => { setError(''); setRevision((value) => value + 1) }} /> : !data ? <p>Загружаем кампус…</p> : data.directions.length === 0 ? <div className="panel"><p>Пока нет опубликованных направлений.</p></div> : <>
-      <CampusCanvas directions={knownDirections} onEnter={(direction) => { window.location.hash = `#/building/${direction.id}` }} />
-      <div className="portal-buttons" aria-label="Доступные корпуса">{knownDirections.map((direction) => <button key={direction.id} type="button" onClick={() => { window.location.hash = `#/building/${direction.id}` }}>Войти: {direction.title}</button>)}</div>
-      {fallbackDirections.length > 0 && <section className="panel"><h2>Другие направления</h2><p className="muted">Для них ещё нет корпуса, но опубликованные сценарии доступны.</p><ScenarioList scenarios={data.scenarios} progress={data.progress} directionIds={new Set(fallbackDirections.map((item) => item.id))} /></section>}
-      {!user.onboarding_completed && <NarratorPrologue onComplete={completeOnboarding} />}
-    </>}
+  return <main className="game-shell">
+    {error ? <LoadState error={error} retry={() => { setError(''); setRevision((value) => value + 1) }} /> : !data ? <p className="game-loading">Загружаем кампус…</p> : data.length === 0 ? <div className="panel"><p>Пока нет опубликованных направлений.</p></div> : <GameShell directions={knownDirections} initialBuildingId={initialBuildingId} />}
+    {!user.onboarding_completed && <NarratorPrologue onComplete={completeOnboarding} />}
   </main>
 }
 
-function ScenarioList({ scenarios, progress, directionIds }: { scenarios: Scenario[], progress: Progress[], directionIds: Set<number> }) {
-  return <ul className="scenario-list">{scenarios.filter((scenario) => directionIds.has(scenario.direction_id)).map((scenario) => {
-    const state = progress.find((item) => item.scenario_id === scenario.id)?.state ?? scenario.state
-    return <li key={scenario.id}><span><strong>{scenario.title}</strong><small>{scenario.description}</small></span><span className="scenario-actions"><span className={`status status-${state}`}>{stateLabels[state]}</span>{state !== 'locked' && <a className="play-link" href={`#/game/${scenario.id}`}>{state === 'completed' ? 'Открыть' : 'Играть'}</a>}</span></li>
-  })}</ul>
+function GameShell({ directions, initialBuildingId }: { directions: Direction[], initialBuildingId: number | null }) {
+  const [building, setBuilding] = useState<Direction | null>(() => directions.find((item) => item.id === initialBuildingId) ?? null)
+  const [dialogue, setDialogue] = useState(false); const [choice, setChoice] = useState<number | null>(null); const [transition, setTransition] = useState<'idle' | 'closing' | 'loading' | 'opening'>('idle'); const [fullscreen, setFullscreen] = useState(false); const shell = useRef<HTMLDivElement>(null)
+  const location = building ? locationFor(building.slug) : undefined
+  useEffect(() => { const selected = directions.find((item) => item.id === initialBuildingId) ?? null; if (selected) setBuilding(selected) }, [directions, initialBuildingId])
+  useEffect(() => { const sync = () => { setFullscreen(document.fullscreenElement === shell.current); if (!document.fullscreenElement) shell.current?.focus() }; document.addEventListener('fullscreenchange', sync); return () => document.removeEventListener('fullscreenchange', sync) }, [])
+  const changePlace = useCallback((next: Direction | null) => {
+    if (transition !== 'idle') return
+    setDialogue(false); setChoice(null); setTransition('closing')
+    window.setTimeout(() => { setBuilding(next); window.location.hash = next ? `#/building/${next.id}` : '#/hub'; setTransition('loading') }, 280)
+    window.setTimeout(() => setTransition('opening'), 800); window.setTimeout(() => setTransition('idle'), 1120)
+  }, [transition])
+  async function toggleFullscreen() { if (document.fullscreenElement) await document.exitFullscreen(); else await shell.current?.requestFullscreen() }
+  const reaction = choice === null ? undefined : location?.choices[choice]?.reaction
+  return <section className="play-area" ref={shell} tabIndex={-1} aria-label="Игровая область">
+    <div className="world-controls"><span>WASD / стрелки — движение</span><span><kbd>E</kbd> — взаимодействие</span><button type="button" onClick={() => void toggleFullscreen()}>{fullscreen ? 'Свернуть' : 'На весь экран'}</button></div>
+    {building && location ? <GameCanvas directionSlug={building.slug} blocked={dialogue || transition !== 'idle'} onInteract={() => setDialogue(true)} onExit={() => changePlace(null)} /> : <CampusCanvas directions={directions} blocked={transition !== 'idle'} onEnter={(direction) => changePlace(direction)} />}
+    {dialogue && location && <div className="dialogue-overlay" role="dialog" aria-modal="true" aria-label={`Мастер ${building?.title}`}><img src={location.portrait} alt={`Портрет мастера ${building?.title}`} /><div className="dialogue-copy"><span className="dialogue-name">Мастер {building?.title}</span><p>{reaction ?? location.greeting}</p>{choice === null ? <div className="dialogue-choices">{location.choices.map((item, index) => <button key={item.text} type="button" onClick={() => setChoice(index)}>{item.text}</button>)}</div> : <button type="button" className="primary" onClick={() => { setDialogue(false); setChoice(null); shell.current?.focus() }}>Завершить разговор</button>}</div></div>}
+    <div className={`iris-transition iris-${transition}`} aria-hidden="true" />
+    {transition === 'loading' && <div className="loading-card" role="status">Компилируем маршрут… <small>Если работает — не трогай. Если не работает — тоже сначала прочитай лог.</small></div>}
+  </section>
 }
 
 function NarratorPrologue({ onComplete }: { onComplete: () => Promise<void> }) {
@@ -160,15 +165,14 @@ function NarratorPrologue({ onComplete }: { onComplete: () => Promise<void> }) {
   return <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label="Пролог Дяди Дебага"><section className="panel narrator-prologue"><img src="/content/characters/npcs/npc_narrator_portrait.png" alt="Дядя Дебаг" /><div><span className="eyebrow">Дядя Дебаг</span><h2>Добро пожаловать в кампус</h2><p>Здесь можно пробовать разные IT-направления без единственно правильного маршрута. Подходите к корпусам, говорите с мастерами и выбирайте сценарии.</p>{error && <p className="error" role="alert">{error}</p>}<div className="admin-actions"><button className="primary" type="button" disabled={busy} onClick={finish}>Продолжить</button><button type="button" disabled={busy} onClick={finish}>Пропустить</button></div></div></section></div>
 }
 
-function BuildingScreen({ api, directionId }: { api: ApiClient, directionId: number }) {
+export function BuildingScreen({ api, directionId }: { api: ApiClient, directionId: number }) {
   const [data, setData] = useState<{ direction: Direction, scenarios: Scenario[], progress: Progress[] } | null>(null)
   const [dialogue, setDialogue] = useState(false); const [error, setError] = useState('')
   useEffect(() => { let active = true; Promise.all([api.directions(), api.scenarios(), api.progress()]).then(([directions, scenarios, progress]) => { const direction = directions.find((item) => item.id === directionId); if (!direction) throw new Error('Направление не найдено.'); if (active) setData({ direction, scenarios, progress }) }).catch((cause) => { if (active) setError(errorMessage(cause)) }); return () => { active = false } }, [api, directionId])
   if (error) return <main className="content"><LoadState error={error} retry={() => window.location.hash = '#/hub'} /></main>
   if (!data) return <main className="content"><p>Открываем корпус…</p></main>
   const location = locationFor(data.direction.slug)
-  const scenarios = data.scenarios.filter((scenario) => scenario.direction_id === data.direction.id)
-  return <main className="content game-page"><div className="page-heading"><span className="eyebrow">Корпус направления</span><h1>{data.direction.title}</h1><p>{data.direction.description}</p><a href="#/hub">Вернуться в кампус</a></div><GameCanvas scenarioTitle={data.direction.title} directionSlug={data.direction.slug} onInteract={() => setDialogue(true)} /><section className="panel game-instructions"><p>Подойдите к мастеру и нажмите <kbd>E</kbd>, либо используйте кнопку.</p><button type="button" onClick={() => setDialogue(true)}>Поговорить с мастером</button></section>{dialogue && <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label={`Мастер ${data.direction.title}`}><section className="panel direction-dialogue"><img src={location?.portrait} alt="Портрет мастера" /><div><span className="eyebrow">Мастер {data.direction.title}</span><p>{location?.greeting ?? 'Выберите сценарий направления.'}</p><ScenarioList scenarios={scenarios} progress={data.progress} directionIds={new Set([data.direction.id])} /><button type="button" onClick={() => setDialogue(false)}>Закрыть</button></div></section></div>}</main>
+  return <main className="content game-page"><GameCanvas directionSlug={data.direction.slug} onInteract={() => setDialogue(true)} onExit={() => { window.location.hash = '#/hub' }} /><section className="panel game-instructions"><button type="button" onClick={() => setDialogue(true)}>Поговорить с мастером</button></section>{dialogue && <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label={`Мастер ${data.direction.title}`}><section className="panel direction-dialogue"><img src={location?.portrait} alt="Портрет мастера" /><div><span className="eyebrow">Мастер {data.direction.title}</span><p>{location?.greeting}</p><button type="button" onClick={() => setDialogue(false)}>Закрыть</button></div></section></div>}</main>
 }
 
 export function GameScreen({ api, scenarioId, Game = GameCanvas }: { api: ApiClient, scenarioId: number, Game?: typeof GameCanvas }) {
@@ -209,7 +213,7 @@ export function GameScreen({ api, scenarioId, Game = GameCanvas }: { api: ApiCli
   if (!scenario) return <main className="content"><p>Загружаем игровую локацию…</p></main>
   return <main className="content game-page">
     <div className="page-heading"><span className="eyebrow">Игровая локация</span><h1>{scenario.title}</h1><p>{scenario.description}</p><a href="#/hub">Вернуться в хаб</a></div>
-    <Game scenarioTitle={scenario.title} directionSlug={directionSlug} onInteract={openTask} />
+    <Game directionSlug={directionSlug ?? 'backend'} onInteract={openTask} onExit={() => { window.location.hash = '#/hub' }} />
     <section className="panel game-instructions"><h2>Как пройти задание</h2><p>Подойдите к NPC и нажмите <kbd>E</kbd>. Вопрос откроется в обычном React-интерфейсе, а результат сохранится на сервере.</p>{scenario.tasks.some((item) => item.kind === 'choice' && !completedTaskIds.has(item.id)) ? <button type="button" onClick={openTask}>Открыть задание</button> : <p className="success">Все задания этой локации завершены.</p>}</section>
     {feedback && <section className="panel world-feedback" role="status"><h2>{feedback.is_correct ? 'NPC доволен решением' : 'NPC просит проверить ответ'}</h2><p>{feedback.explanation}</p><p className="muted">Сохранённый статус сценария: {stateLabels[feedback.scenario_state]}.</p></section>}
     {task && <TaskModal api={api} task={task} onResult={handleResult} onClose={() => setTask(null)} />}

@@ -49,16 +49,17 @@ after(async () => {
   dom.window.close()
 })
 
-test('login opens the campus with server-saved progress loaded', async () => {
+test('login opens the compact campus game shell without loading scenarios', async () => {
   const requests = mockApi({ login: true })
   render(React.createElement(App))
   fireEvent.change(screen.getByLabelText('Электронная почта'), { target: { value: 'player@example.com' } })
   fireEvent.change(screen.getByLabelText('Пароль'), { target: { value: 'password123' } })
   fireEvent.click(screen.getByRole('button', { name: 'Войти' }))
 
-  assert.ok(await screen.findByRole('heading', { name: 'Кампус' }))
+  assert.ok(await screen.findByRole('region', { name: 'Игровая область' }))
   assert.equal(localStorage.getItem('tvoyvybor.accessToken'), 'test-token')
-  assert.ok(requests.some((request) => request.path === '/api/progress' && request.authorization === 'Bearer test-token'))
+  assert.ok(requests.some((request) => request.path === '/api/directions' && request.authorization === 'Bearer test-token'))
+  assert.ok(!requests.some((request) => request.path === '/api/progress'))
 })
 
 test('saved token restores the session and server status after remount', async () => {
@@ -67,12 +68,12 @@ test('saved token restores the session and server status after remount', async (
   const requests = mockApi()
   render(React.createElement(App))
 
-  assert.ok(await screen.findByRole('heading', { name: 'Кампус' }))
+  assert.ok(await screen.findByRole('region', { name: 'Игровая область' }))
   assert.ok(requests.some((request) => request.path === '/api/auth/me' && request.authorization === 'Bearer saved-token'))
-  assert.ok(requests.some((request) => request.path === '/api/progress' && request.authorization === 'Bearer saved-token'))
+  assert.ok(!requests.some((request) => request.path === '/api/progress'))
 })
 
-test('campus exposes three building entrances and a completed scenario remains available', async () => {
+test('campus keeps entrances inside the scene and exposes fullscreen control', async () => {
   localStorage.setItem('tvoyvybor.accessToken', 'saved-token')
   window.location.hash = '/hub'
   mockApi({
@@ -91,7 +92,9 @@ test('campus exposes three building entrances and a completed scenario remains a
   render(React.createElement(App))
 
   assert.ok(await screen.findByLabelText('Игровой кампус'))
-  assert.equal(screen.getAllByRole('button', { name: /Войти:/ }).length, 3)
+  assert.ok(screen.getByRole('button', { name: 'На весь экран' }))
+  assert.equal(screen.queryByText('Первый сценарий'), null)
+  assert.equal(screen.queryByRole('button', { name: /Войти:/ }), null)
 })
 
 test('401 while restoring the session clears the token and opens login', async () => {

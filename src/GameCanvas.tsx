@@ -1,33 +1,32 @@
 import { useEffect, useRef } from 'react'
 import { locationFor } from './world'
 
-interface GameCanvasProps {
-  scenarioTitle: string
-  directionSlug?: string
-  onInteract: () => void
-}
+interface GameCanvasProps { directionSlug: string, onInteract: () => void, onExit: () => void, blocked?: boolean }
 
-export function GameCanvas({ scenarioTitle, directionSlug, onInteract }: GameCanvasProps) {
+export function GameCanvas({ directionSlug, onInteract, onExit, blocked = false }: GameCanvasProps) {
   const host = useRef<HTMLDivElement>(null)
   const onInteractRef = useRef(onInteract)
+  const onExitRef = useRef(onExit)
+  const blockedRef = useRef(blocked)
 
   useEffect(() => { onInteractRef.current = onInteract }, [onInteract])
+  useEffect(() => { onExitRef.current = onExit }, [onExit])
+  useEffect(() => { blockedRef.current = blocked }, [blocked])
 
   useEffect(() => {
     let game: { destroy: (removeCanvas: boolean) => void } | undefined
     let cancelled = false
 
-    const location = directionSlug ? locationFor(directionSlug) : undefined
+    const location = locationFor(directionSlug)
     void import('phaser').then(({ default: Phaser }) => {
       if (cancelled || !host.current) return
 
       class SliceScene extends Phaser.Scene {
         private player!: Phaser.GameObjects.Image
-        private npc!: Phaser.GameObjects.Image | Phaser.GameObjects.Arc
-        private hint!: Phaser.GameObjects.Text
+        private npc!: Phaser.GameObjects.Image
         private interaction!: Phaser.GameObjects.Image
         private cursors?: Phaser.Types.Input.Keyboard.CursorKeys
-        private wasNear = false
+        private action: 'npc' | 'exit' | undefined
         private facing = 'front'
 
         constructor() { super('slice') }
@@ -39,20 +38,18 @@ export function GameCanvas({ scenarioTitle, directionSlug, onInteract }: GameCan
         }
 
         create() {
-          if (location) this.add.image(400, 250, 'interior').setDisplaySize(800, 500)
-          else this.add.rectangle(400, 250, 800, 500, 0x13213a)
-          this.add.text(28, 25, scenarioTitle, { fontFamily: 'system-ui', fontSize: '21px', color: '#ffffff', stroke: '#172238', strokeThickness: 5 })
-          this.player = this.add.image(150, 340, 'player-front').setDisplaySize(176, 216)
-          this.npc = location ? this.add.image(location.npc.x, 270, 'npc').setDisplaySize(328, 416) : this.add.circle(620, 340, 96, 0xfbc977)
-          this.interaction = this.add.image(620, 80, 'interact').setDisplaySize(52, 52).setVisible(false)
-          this.hint = this.add.text(400, 465, '', { fontFamily: 'system-ui', fontSize: '16px', color: '#ffffff', stroke: '#172238', strokeThickness: 5 }).setOrigin(.5)
+          if (!location) return
+          this.add.image(400, 250, 'interior').setDisplaySize(800, 500)
+          this.player = this.add.image(180, 380, 'player-front').setOrigin(.5, 1)
+          this.npc = this.add.image(location.npc.x, location.npc.y, 'npc').setOrigin(.5, 1)
+          this.interaction = this.add.image(400, 300, 'interact').setDisplaySize(31, 31).setVisible(false).setDepth(1000)
           this.cursors = this.input.keyboard?.createCursorKeys()
-          this.input.keyboard?.on('keydown-E', () => { if (this.wasNear) onInteractRef.current() })
+          this.input.keyboard?.on('keydown-E', () => { if (blockedRef.current) return; if (this.action === 'npc') onInteractRef.current(); if (this.action === 'exit') onExitRef.current() })
         }
 
         update(_time: number, delta: number) {
           const keyboard = this.input.keyboard
-          if (!keyboard || !this.cursors) return
+          if (!keyboard || !this.cursors || !location || blockedRef.current) return
           const speed = .19 * delta
           let facing = this.facing
           if (this.cursors.left.isDown || keyboard.addKey('A').isDown) { this.player.x -= speed; facing = 'left' }
@@ -60,11 +57,15 @@ export function GameCanvas({ scenarioTitle, directionSlug, onInteract }: GameCan
           if (this.cursors.up.isDown || keyboard.addKey('W').isDown) { this.player.y -= speed; facing = 'back' }
           if (this.cursors.down.isDown || keyboard.addKey('S').isDown) { this.player.y += speed; facing = 'front' }
           if (facing !== this.facing) { this.facing = facing; this.player.setTexture(`player-${facing}`) }
-          this.player.x = Phaser.Math.Clamp(this.player.x, 88, 712)
-          this.player.y = Phaser.Math.Clamp(this.player.y, 108, 392)
-          this.wasNear = Phaser.Math.Distance.Between(this.player.x, this.player.y, this.npc.x, this.npc.y) < 220
-          this.interaction.setPosition(this.npc.x, this.npc.y - 210).setVisible(this.wasNear)
-          this.hint.setText(this.wasNear ? 'E — поговорить с мастером и открыть задание' : '')
+          this.player.x = Phaser.Math.Clamp(this.player.x, 82, 718)
+          this.player.y = Phaser.Math.Clamp(this.player.y, location.floor.top, location.floor.bottom)
+          const scaleAt = (y: number) => location.scale.min + ((y - location.floor.top) / (location.floor.bottom - location.floor.top)) * (location.scale.max - location.scale.min)
+          this.player.setScale(scaleAt(this.player.y)).setDepth(this.player.y)
+          this.npc.setScale(scaleAt(this.npc.y)).setDepth(this.npc.y)
+          const nearNpc = Phaser.Math.Distance.Between(this.player.x, this.player.y, this.npc.x, this.npc.y) < 86
+          const nearExit = Phaser.Math.Distance.Between(this.player.x, this.player.y, location.exit.x, location.exit.y) < 68
+          this.action = nearNpc ? 'npc' : nearExit ? 'exit' : undefined
+          this.interaction.setPosition(nearNpc ? this.npc.x : this.player.x, (nearNpc ? this.npc.y : this.player.y) - 65).setVisible(Boolean(this.action))
         }
       }
 
@@ -73,13 +74,15 @@ export function GameCanvas({ scenarioTitle, directionSlug, onInteract }: GameCan
         parent: host.current,
         width: 800,
         height: 500,
+        render: { antialias: true, pixelArt: false },
+        scale: { mode: Phaser.Scale.FIT, autoCenter: Phaser.Scale.CENTER_BOTH, width: 800, height: 500 },
         backgroundColor: '#101829',
         scene: SliceScene,
       })
     })
 
     return () => { cancelled = true; game?.destroy(true) }
-  }, [scenarioTitle, directionSlug])
+  }, [directionSlug])
 
   return <div className="game-canvas" ref={host} aria-label="Игровая сцена" />
 }

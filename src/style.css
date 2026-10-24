@@ -47,8 +47,28 @@ p { line-height: 1.6; }
 .status-active { color: #ffdf92; border-color: #aa8045; }
 .event-list p { color: #afc0dc; margin: .2rem 0 0; }
 .game-page { max-width: 920px; }
-.game-canvas { width: 100%; overflow: hidden; border: 1px solid #405174; border-radius: 1rem; background: #101829; }
-.game-canvas canvas { display: block; width: 100% !important; height: auto !important; }
+.game-canvas { width: 100%; height: 100%; overflow: hidden; border: 1px solid #405174; border-radius: 1rem; background: #101829; }
+.game-canvas canvas { display: block; width: 100% !important; height: 100% !important; }
+.app-shell:has(.game-shell) { height: 100vh; overflow: hidden; }
+.app-shell:has(.game-shell) .site-header { height: 70px; padding-top: .75rem; padding-bottom: .75rem; }
+.game-shell { height: calc(100vh - 70px); min-height: 530px; padding: 1rem; display: grid; place-items: center; overflow: hidden; }
+.game-loading { color: #afc0dc; }
+.play-area { position: relative; width: min(100%, 1100px); height: min(calc(100vh - 106px), 690px); min-height: 500px; outline: none; }
+.play-area:fullscreen { width: 100vw; height: 100vh; background: #101829; padding: 1rem; }
+.world-controls { position: absolute; z-index: 3; top: .8rem; left: .8rem; right: .8rem; display: flex; gap: .55rem; align-items: center; color: #e8eef9; font-size: .78rem; text-shadow: 0 1px 3px #000; pointer-events: none; }
+.world-controls button { margin-left: auto; padding: .45rem .65rem; pointer-events: auto; background: #172238dd; }
+.dialogue-overlay { position: absolute; z-index: 5; left: 3%; right: 3%; bottom: 3%; min-height: 150px; display: grid; grid-template-columns: 145px 1fr; gap: 1rem; padding: 1rem 1.25rem; background: #172238 url('/content/ui/ui_dialogue_box.png') center / 100% 100% no-repeat; }
+.dialogue-overlay img { width: 135px; max-height: 170px; object-fit: contain; align-self: end; }
+.dialogue-copy { display: grid; align-content: center; gap: .55rem; }
+.dialogue-copy p { margin: 0; }
+.dialogue-name { width: max-content; padding: .35rem 1.3rem; color: #172238; font-weight: 800; background: url('/content/ui/ui_nameplate.png') center / 100% 100% no-repeat; }
+.dialogue-choices { display: flex; flex-wrap: wrap; gap: .55rem; }
+.iris-transition { position: absolute; z-index: 8; inset: 0; pointer-events: none; background: #000; clip-path: circle(150% at 50% 50%); transition: clip-path .28s ease-in; }
+.iris-closing, .iris-loading { clip-path: circle(0 at 50% 50%); }
+.iris-opening { clip-path: circle(150% at 50% 50%); transition-timing-function: ease-out; }
+.iris-idle { visibility: hidden; }
+.loading-card { position: absolute; z-index: 9; left: 50%; top: 50%; width: min(430px, 80%); transform: translate(-50%, -50%); padding: 1.2rem; border: 1px solid #405174; border-radius: .8rem; background: #172238; text-align: center; box-shadow: 0 1rem 3rem #0008; }
+.loading-card small { display: block; margin-top: .6rem; color: #afc0dc; }
 .campus-page { max-width: 920px; }
 .portal-buttons { display: flex; flex-wrap: wrap; gap: .7rem; }
 .narrator-prologue, .direction-dialogue { width: min(720px, 100%); display: grid; grid-template-columns: 170px 1fr; gap: 1.25rem; align-items: start; }
@@ -70,4 +90,4 @@ kbd { border: 1px solid #5a6b89; border-radius: .25rem; padding: .05rem .3rem; b
 .admin-form textarea { min-height: 7rem; resize: vertical; }
 .admin-list > li { display: grid; gap: .65rem; }
 .admin-actions { display: flex; flex-wrap: wrap; gap: .55rem; }
-@media (max-width: 760px) { .auth-layout { grid-template-columns: 1fr; align-content: center; } .site-header { flex-wrap: wrap; } .site-header nav { order: 3; width: 100%; } .account span { display: none; } .narrator-prologue, .direction-dialogue { grid-template-columns: 1fr; } .narrator-prologue img, .direction-dialogue img { width: 140px; } }
+@media (max-width: 760px) { .auth-layout { grid-template-columns: 1fr; align-content: center; } .site-header { flex-wrap: wrap; } .app-shell:has(.game-shell) .site-header { height: 112px; } .site-header nav { order: 3; width: 100%; } .account span { display: none; } .narrator-prologue, .direction-dialogue { grid-template-columns: 1fr; } .narrator-prologue img, .direction-dialogue img { width: 140px; } .game-shell { height: calc(100vh - 112px); padding: .4rem; } .play-area { min-height: 440px; } .world-controls span { display: none; } .dialogue-overlay { grid-template-columns: 88px 1fr; padding: .7rem; } .dialogue-overlay img { width: 80px; } }
