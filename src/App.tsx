@@ -8,13 +8,13 @@ import './style.css'
 
 const tokenKey = 'tvoyvybor.accessToken'
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || '/api'
-type Route = 'login' | 'register' | 'hub' | 'building' | 'profile' | 'results' | 'admin' | 'game'
+type Route = 'login' | 'register' | 'hub' | 'building' | 'profile' | 'results' | 'admin' | 'game' | 'help'
 
 function currentRoute(): Route {
   const path = window.location.hash.slice(2)
   if (path.startsWith('game/')) return 'game'
   if (path.startsWith('building/')) return 'building'
-  return path === 'register' || path === 'hub' || path === 'profile' || path === 'results' || path === 'admin' ? path : 'login'
+  return path === 'register' || path === 'hub' || path === 'profile' || path === 'results' || path === 'admin' || path === 'help' ? path : 'login'
 }
 function navigate(route: Route) { window.location.hash = `/${route}` }
 function buildingId() { const value = Number(window.location.hash.slice(11)); return Number.isInteger(value) && value > 0 ? value : null }
@@ -83,11 +83,12 @@ function App() {
         <a href="#/hub" aria-current={route === 'hub' ? 'page' : undefined}>Хаб</a>
         <a href="#/profile" aria-current={route === 'profile' ? 'page' : undefined}>Профиль</a>
         <a href="#/results" aria-current={route === 'results' ? 'page' : undefined}>Результаты</a>
+        <a href="#/help" aria-current={route === 'help' ? 'page' : undefined}>Помощь</a>
         {user.role === 'admin' && <a href="#/admin" aria-current={route === 'admin' ? 'page' : undefined}>Администрирование</a>}
       </nav>
       <div className="account"><span>{user.email}</span><button type="button" onClick={logout}>Выйти</button></div>
     </header>
-    {route === 'profile' ? <ProfileScreen api={api} /> : route === 'results' ? <ResultsScreen api={api} /> : route === 'admin' ? user.role === 'admin' ? <AdminScreen api={api} /> : <main className="content"><section className="panel"><h1>Нет доступа</h1><p>Управление контентом доступно только администраторам.</p></section></main> : <HubScreen api={api} user={user} onOnboardingComplete={setUser} initialBuildingId={route === 'building' ? buildingId() : null} />}
+    {route === 'profile' ? <ProfileScreen api={api} /> : route === 'results' ? <ResultsScreen api={api} /> : route === 'help' ? <HelpScreen /> : route === 'admin' ? user.role === 'admin' ? <AdminScreen api={api} /> : <main className="content"><section className="panel"><h1>Нет доступа</h1><p>Управление контентом доступно только администраторам.</p></section></main> : <HubScreen api={api} user={user} onOnboardingComplete={setUser} initialBuildingId={route === 'building' ? buildingId() : null} />}
   </div>
 }
 
@@ -138,26 +139,30 @@ export function HubScreen({ api, user, onOnboardingComplete, initialBuildingId =
 
 function GameShell({ directions, initialBuildingId }: { directions: Direction[], initialBuildingId: number | null }) {
   const [building, setBuilding] = useState<Direction | null>(() => directions.find((item) => item.id === initialBuildingId) ?? null)
-  const [dialogue, setDialogue] = useState(false); const [choice, setChoice] = useState<number | null>(null); const [transition, setTransition] = useState<'idle' | 'closing' | 'loading' | 'opening'>('idle'); const [fullscreen, setFullscreen] = useState(false); const shell = useRef<HTMLDivElement>(null)
+  const [dialogue, setDialogue] = useState(false); const [choice, setChoice] = useState<number | null>(null); const [action, setAction] = useState<string | null>(null); const [transition, setTransition] = useState<'idle' | 'closing' | 'loading' | 'opening'>('idle'); const [fullscreen, setFullscreen] = useState(false); const shell = useRef<HTMLDivElement>(null)
   const location = building ? locationFor(building.slug) : undefined
   useEffect(() => { const selected = directions.find((item) => item.id === initialBuildingId) ?? null; if (selected) setBuilding(selected) }, [directions, initialBuildingId])
   useEffect(() => { const sync = () => { setFullscreen(document.fullscreenElement === shell.current); if (!document.fullscreenElement) shell.current?.focus() }; document.addEventListener('fullscreenchange', sync); return () => document.removeEventListener('fullscreenchange', sync) }, [])
+  useEffect(() => { const openHelp = (event: KeyboardEvent) => { if (event.key === 'F1') { event.preventDefault(); window.location.hash = '#/help' } }; window.addEventListener('keydown', openHelp); return () => window.removeEventListener('keydown', openHelp) }, [])
   const changePlace = useCallback((next: Direction | null) => {
     if (transition !== 'idle') return
     setDialogue(false); setChoice(null); setTransition('closing')
     window.setTimeout(() => { setBuilding(next); window.location.hash = next ? `#/building/${next.id}` : '#/hub'; setTransition('loading') }, 280)
-    window.setTimeout(() => setTransition('opening'), 800); window.setTimeout(() => setTransition('idle'), 1120)
+    window.setTimeout(() => setTransition('opening'), 5300); window.setTimeout(() => setTransition('idle'), 5620)
   }, [transition])
   async function toggleFullscreen() { if (document.fullscreenElement) await document.exitFullscreen(); else await shell.current?.requestFullscreen() }
   const reaction = choice === null ? undefined : location?.choices[choice]?.reaction
   return <section className="play-area" ref={shell} tabIndex={-1} aria-label="Игровая область">
-    <div className="world-controls"><span>WASD / стрелки — движение</span><span><kbd>E</kbd> — взаимодействие</span><button type="button" onClick={() => void toggleFullscreen()}>{fullscreen ? 'Свернуть' : 'На весь экран'}</button></div>
-    {building && location ? <GameCanvas directionSlug={building.slug} blocked={dialogue || transition !== 'idle'} onInteract={() => setDialogue(true)} onExit={() => changePlace(null)} /> : <CampusCanvas directions={directions} blocked={transition !== 'idle'} onEnter={(direction) => changePlace(direction)} />}
-    {dialogue && location && <div className="dialogue-overlay" role="dialog" aria-modal="true" aria-label={`Мастер ${building?.title}`}><img src={location.portrait} alt={`Портрет мастера ${building?.title}`} /><div className="dialogue-copy"><span className="dialogue-name">Мастер {building?.title}</span><p>{reaction ?? location.greeting}</p>{choice === null ? <div className="dialogue-choices">{location.choices.map((item, index) => <button key={item.text} type="button" onClick={() => setChoice(index)}>{item.text}</button>)}</div> : <button type="button" className="primary" onClick={() => { setDialogue(false); setChoice(null); shell.current?.focus() }}>Завершить разговор</button>}</div></div>}
+    <div className="world-controls"><button type="button" onClick={() => { window.location.hash = '#/help' }}>Помощь · F1</button><button type="button" onClick={() => void toggleFullscreen()}>{fullscreen ? 'Свернуть' : 'На весь экран'}</button></div>
+    {building && location ? <GameCanvas directionSlug={building.slug} blocked={dialogue || transition !== 'idle'} onActionChange={setAction} onInteract={() => setDialogue(true)} onExit={() => changePlace(null)} /> : <CampusCanvas directions={directions} blocked={transition !== 'idle'} onActionChange={setAction} onEnter={(direction) => changePlace(direction)} />}
+    {action && !dialogue && <div className="action-prompt"><kbd>E</kbd><span>{action}</span></div>}
+    {dialogue && location && <>{choice === null && <div className="dialogue-choices">{location.choices.map((item, index) => <button key={item.text} type="button" onClick={() => setChoice(index)}>{item.text}</button>)}</div>}<div className="dialogue-overlay" role="dialog" aria-modal="true" aria-label={`Мастер ${building?.title}`}><img src={choice === null ? location.portrait : `/content/characters/npcs/emotions/${location.slug}/${location.choices[choice].emotion}.png`} alt={`Портрет мастера ${building?.title}`} /><div className="dialogue-copy"><strong>Мастер {building?.title}</strong><p>{reaction ?? location.greeting}</p>{choice !== null && <button type="button" className="primary" onClick={() => { setDialogue(false); setChoice(null); shell.current?.focus() }}>Завершить разговор</button>}</div></div></>}
     <div className={`iris-transition iris-${transition}`} aria-hidden="true" />
-    {transition === 'loading' && <div className="loading-card" role="status">Компилируем маршрут… <small>Если работает — не трогай. Если не работает — тоже сначала прочитай лог.</small></div>}
+    {transition === 'loading' && <div className="loading-card" role="status">Новая локация готовится… <small>Совет: хороший лог часто честнее воспоминаний о том, «как всё работало вчера».</small></div>}
   </section>
 }
+
+function HelpScreen() { return <main className="content"><section className="panel"><h1>Помощь</h1><p>Это прогулка по IT-кампусу: разговаривайте с мастерами и выбирайте темы без правильных ответов или оценок.</p><ul className="event-list"><li><strong>WASD / стрелки</strong><p>Движение по доступным дорожкам.</p></li><li><strong>E</strong><p>Войти в корпус, поговорить с мастером или выйти в хаб.</p></li><li><strong>Fullscreen</strong><p>Кнопка «На весь экран» разворачивает игровое окно; выход — Esc.</p></li><li><strong>F1</strong><p>Открывает эту справку из игры.</p></li></ul></section></main> }
 
 function NarratorPrologue({ onComplete }: { onComplete: () => Promise<void> }) {
   const [busy, setBusy] = useState(false); const [error, setError] = useState('')

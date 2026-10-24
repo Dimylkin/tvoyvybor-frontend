@@ -93,6 +93,7 @@ test('campus keeps entrances inside the scene and exposes fullscreen control', a
 
   assert.ok(await screen.findByLabelText('Игровой кампус'))
   assert.ok(screen.getByRole('button', { name: 'На весь экран' }))
+  assert.ok(screen.getByRole('button', { name: 'Помощь · F1' }))
   assert.equal(screen.queryByText('Первый сценарий'), null)
   assert.equal(screen.queryByRole('button', { name: /Войти:/ }), null)
 })

@@ -57,12 +57,15 @@ p { line-height: 1.6; }
 .play-area:fullscreen { width: 100vw; height: 100vh; background: #101829; padding: 1rem; }
 .world-controls { position: absolute; z-index: 3; top: .8rem; left: .8rem; right: .8rem; display: flex; gap: .55rem; align-items: center; color: #e8eef9; font-size: .78rem; text-shadow: 0 1px 3px #000; pointer-events: none; }
 .world-controls button { margin-left: auto; padding: .45rem .65rem; pointer-events: auto; background: #172238dd; }
-.dialogue-overlay { position: absolute; z-index: 5; left: 3%; right: 3%; bottom: 3%; min-height: 150px; display: grid; grid-template-columns: 145px 1fr; gap: 1rem; padding: 1rem 1.25rem; background: #172238 url('/content/ui/ui_dialogue_box.png') center / 100% 100% no-repeat; }
-.dialogue-overlay img { width: 135px; max-height: 170px; object-fit: contain; align-self: end; }
-.dialogue-copy { display: grid; align-content: center; gap: .55rem; }
-.dialogue-copy p { margin: 0; }
-.dialogue-name { width: max-content; padding: .35rem 1.3rem; color: #172238; font-weight: 800; background: url('/content/ui/ui_nameplate.png') center / 100% 100% no-repeat; }
-.dialogue-choices { display: flex; flex-wrap: wrap; gap: .55rem; }
+.dialogue-overlay { position: absolute; z-index: 5; left: 3%; right: 3%; bottom: 3%; min-height: 150px; display: grid; grid-template-columns: 135px 1fr; gap: 1rem; padding: 1rem 1.25rem; border: 1px solid #57739f; border-radius: 1rem; background: #102744f5; box-shadow: 0 .8rem 2rem #0008; }
+.dialogue-overlay img { width: 125px; height: 125px; object-fit: contain; align-self: center; }
+.dialogue-copy { display: grid; align-content: center; gap: .55rem; color: #f5f8ff; }
+.dialogue-copy p { margin: 0; line-height: 1.45; }
+.dialogue-copy strong { color: #8de7ff; }
+.dialogue-choices { position: absolute; z-index: 6; left: 3%; right: 3%; bottom: calc(3% + 168px); display: flex; flex-wrap: wrap; gap: .55rem; }
+.dialogue-choices button { background: #eaf4ff; color: #12325b; border-color: #fff; font-weight: 700; }
+.action-prompt { position: absolute; z-index: 4; left: 50%; bottom: 4%; transform: translateX(-50%); display: flex; align-items: center; gap: .55rem; padding: .45rem .7rem; border-radius: .6rem; color: #102744; background: #fff; box-shadow: 0 .35rem 1rem #0008; font-size: .82rem; font-weight: 700; }
+.action-prompt kbd { color: #fff; border: 0; background: #245aa6; padding: .2rem .45rem; }
 .iris-transition { position: absolute; z-index: 8; inset: 0; pointer-events: none; background: #000; clip-path: circle(150% at 50% 50%); transition: clip-path .28s ease-in; }
 .iris-closing, .iris-loading { clip-path: circle(0 at 50% 50%); }
 .iris-opening { clip-path: circle(150% at 50% 50%); transition-timing-function: ease-out; }
@@ -72,8 +75,8 @@ p { line-height: 1.6; }
 .campus-page { max-width: 920px; }
 .portal-buttons { display: flex; flex-wrap: wrap; gap: .7rem; }
 .narrator-prologue, .direction-dialogue { width: min(720px, 100%); display: grid; grid-template-columns: 170px 1fr; gap: 1.25rem; align-items: start; }
-.direction-dialogue { border: 0; border-radius: 1.2rem; background: #172238 url('/content/ui/ui_dialogue_box.png') center / 100% 100% no-repeat; }
-.direction-dialogue .eyebrow { display: inline-block; min-width: 11rem; padding: .4rem .75rem; color: #1a2131; background: url('/content/ui/ui_nameplate.png') center / 100% 100% no-repeat; }
+.direction-dialogue { border: 1px solid #57739f; border-radius: 1.2rem; background: #172238; }
+.direction-dialogue .eyebrow { display: inline-block; min-width: 11rem; padding: .4rem .75rem; color: #8de7ff; }
 .narrator-prologue img, .direction-dialogue img { width: 100%; max-height: 230px; object-fit: contain; }
 .direction-dialogue .scenario-list { margin: 1rem 0; }
 .game-instructions, .world-feedback { max-width: 800px; }
