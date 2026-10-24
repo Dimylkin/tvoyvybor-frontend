@@ -19,7 +19,7 @@ const { default: App, GameScreen } = await vite.ssrLoadModule('/src/App.tsx')
 const { TaskModal } = await vite.ssrLoadModule('/src/TaskModal.tsx')
 const { ApiClient } = await vite.ssrLoadModule('/src/api.ts')
 
-const user = { id: 1, email: 'player@example.com', role: 'user' }
+const user = { id: 1, email: 'player@example.com', role: 'user', onboarding_completed: true }
 const direction = { id: 3, slug: 'backend', title: 'Backend', description: 'Серверная разработка' }
 const scenario = { id: 7, direction_id: 3, slug: 'first', title: 'Первый сценарий', description: 'Проверка сервера', state: 'active' }
 
@@ -49,15 +49,14 @@ after(async () => {
   dom.window.close()
 })
 
-test('login opens the hub with server-saved scenario status', async () => {
+test('login opens the campus with server-saved progress loaded', async () => {
   const requests = mockApi({ login: true })
   render(React.createElement(App))
   fireEvent.change(screen.getByLabelText('Электронная почта'), { target: { value: 'player@example.com' } })
   fireEvent.change(screen.getByLabelText('Пароль'), { target: { value: 'password123' } })
   fireEvent.click(screen.getByRole('button', { name: 'Войти' }))
 
-  assert.ok(await screen.findByText('Первый сценарий'))
-  assert.ok(screen.getByText('Завершён'))
+  assert.ok(await screen.findByRole('heading', { name: 'Кампус' }))
   assert.equal(localStorage.getItem('tvoyvybor.accessToken'), 'test-token')
   assert.ok(requests.some((request) => request.path === '/api/progress' && request.authorization === 'Bearer test-token'))
 })
@@ -68,13 +67,12 @@ test('saved token restores the session and server status after remount', async (
   const requests = mockApi()
   render(React.createElement(App))
 
-  assert.ok(await screen.findByText('Первый сценарий'))
-  assert.ok(screen.getByText('Завершён'))
+  assert.ok(await screen.findByRole('heading', { name: 'Кампус' }))
   assert.ok(requests.some((request) => request.path === '/api/auth/me' && request.authorization === 'Bearer saved-token'))
   assert.ok(requests.some((request) => request.path === '/api/progress' && request.authorization === 'Bearer saved-token'))
 })
 
-test('hub exposes all three directions and lets a player revisit a completed location', async () => {
+test('campus exposes three building entrances and a completed scenario remains available', async () => {
   localStorage.setItem('tvoyvybor.accessToken', 'saved-token')
   window.location.hash = '/hub'
   mockApi({
@@ -92,11 +90,8 @@ test('hub exposes all three directions and lets a player revisit a completed loc
   })
   render(React.createElement(App))
 
-  assert.ok(await screen.findByRole('heading', { name: 'Backend' }))
-  assert.ok(screen.getByRole('heading', { name: 'Frontend' }))
-  assert.ok(screen.getByRole('heading', { name: 'Аналитика' }))
-  assert.equal(screen.getByRole('link', { name: 'Открыть' }).getAttribute('href'), '#/game/8')
-  assert.equal(screen.getAllByRole('link', { name: 'Играть' }).length, 2)
+  assert.ok(await screen.findByLabelText('Игровой кампус'))
+  assert.equal(screen.getAllByRole('button', { name: /Войти:/ }).length, 3)
 })
 
 test('401 while restoring the session clears the token and opens login', async () => {
@@ -182,6 +177,7 @@ test('game screen opens a task from the scene and shows completed server feedbac
     const path = new URL(String(input), 'http://localhost:5173').pathname
     calls.push({ path, method: init?.method })
     if (path === '/api/scenarios/7') return Response.json({ ...scenario, state: 'available', completed_task_ids: [], tasks: [{ id: 9, kind: 'choice', title: 'Метод', content: { prompt: 'Как читать?', options: ['GET', 'POST'] } }] })
+    if (path === '/api/directions') return Response.json([direction])
     if (path === '/api/scenarios/7/start') return Response.json({ scenario_id: 7, state: 'active' })
     if (path === '/api/tasks/9/attempts') return Response.json({ id: 1, task_id: 9, is_correct: true, reaction: 'completed', explanation: 'GET читает ресурс.', scenario_state: 'completed' }, { status: 201 })
     throw new Error(`Unexpected API request: ${path}`)
@@ -194,7 +190,7 @@ test('game screen opens a task from the scene and shows completed server feedbac
   fireEvent.click(screen.getByRole('button', { name: 'Проверить решение' }))
   assert.ok(await screen.findByText('NPC доволен решением'))
   assert.deepEqual(calls.map((item) => `${item.method ?? 'GET'} ${item.path}`), [
-    'GET /api/scenarios/7', 'PUT /api/scenarios/7/start', 'POST /api/tasks/9/attempts',
+    'GET /api/scenarios/7', 'GET /api/directions', 'PUT /api/scenarios/7/start', 'POST /api/tasks/9/attempts',
   ])
 })
 
@@ -204,6 +200,7 @@ test('completed game route restores server state without starting the scenario a
     const path = new URL(String(input), 'http://localhost:5173').pathname
     calls.push({ path, method: init?.method })
     if (path === '/api/scenarios/7') return Response.json({ ...scenario, state: 'completed', completed_task_ids: [9], tasks: [{ id: 9, kind: 'choice', title: 'Метод', content: { prompt: 'Как читать?', options: ['GET'] } }] })
+    if (path === '/api/directions') return Response.json([direction])
     throw new Error(`Unexpected API request: ${path}`)
   })
   function Scene() { return React.createElement('div', null, 'Восстановленная сцена') }
@@ -211,7 +208,7 @@ test('completed game route restores server state without starting the scenario a
 
   assert.ok(await screen.findByText('Все задания этой локации завершены.'))
   assert.equal(screen.getByRole('link', { name: 'Вернуться в хаб' }).getAttribute('href'), '#/hub')
-  assert.deepEqual(calls, [{ path: '/api/scenarios/7', method: undefined }])
+  assert.deepEqual(calls, [{ path: '/api/scenarios/7', method: undefined }, { path: '/api/directions', method: undefined }])
 })
 
 test('modal reuses its request id after a network failure', async () => {
