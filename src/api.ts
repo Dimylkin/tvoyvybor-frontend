@@ -147,7 +147,7 @@ export class ApiClient {
     baseUrl: string,
     getToken: () => string | null,
     onUnauthorized: () => void,
-    fetchImpl: typeof fetch = fetch,
+    fetchImpl: typeof fetch = fetch.bind(globalThis),
   ) {
     this.baseUrl = baseUrl
     this.getToken = getToken
