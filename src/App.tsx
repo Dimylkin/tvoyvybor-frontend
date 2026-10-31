@@ -1,19 +1,20 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { ApiClient, ApiError, type Achievement, type AdminScenario, type AdminScenarioInput, type AdminTask, type AdminTaskInput, type AttemptResult, type Direction, type FinalReport, type InterestEvent, type InterestProfile, type Progress, type Recommendation, type Scenario, type ScenarioDetail, type ScenarioState, type Task, type User } from './api'
+import { ApiClient, ApiError, type Achievement, type AdminScenario, type AdminScenarioInput, type AdminTask, type AdminTaskInput, type Direction, type FinalReport, type InterestEvent, type InterestProfile, type Quest, type Recommendation, type Scenario, type User } from './api'
 import { GameCanvas } from './GameCanvas'
 import { CampusCanvas } from './CampusCanvas'
 import { returnPosition, type CampusEntry, type CampusPosition } from './campusReturn'
-import { TaskModal } from './TaskModal'
+import { CampusPhone } from './campusos/CampusPhone'
+import { QuestInteraction } from './campusos/QuestInteraction'
 import { locationFor, mainBuilding, type WorldLocation } from './world'
 import './style.css'
 
 const tokenKey = 'tvoyvybor.accessToken'
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || '/api'
-type Route = 'login' | 'register' | 'hub' | 'building' | 'profile' | 'results' | 'admin' | 'game' | 'help'
+type Route = 'login' | 'register' | 'hub' | 'building' | 'profile' | 'results' | 'admin' | 'help'
 
 function currentRoute(): Route {
   const path = window.location.hash.slice(2)
-  if (path.startsWith('game/')) return 'game'
+  if (path.startsWith('game/')) return 'hub'
   if (path.startsWith('building/')) return 'building'
   return path === 'register' || path === 'hub' || path === 'profile' || path === 'results' || path === 'admin' || path === 'help' ? path : 'login'
 }
@@ -23,7 +24,6 @@ function errorMessage(error: unknown): string {
   if (error instanceof ApiError && error.status === 401) return 'Сессия завершилась. Войдите снова.'
   return error instanceof Error ? error.message : 'Не удалось загрузить данные.'
 }
-const stateLabels: Record<ScenarioState, string> = { locked: 'Закрыт', available: 'Доступен', active: 'Начат', completed: 'Завершён', skipped: 'Пропущен' }
 
 function App() {
   const [route, setRoute] = useState(currentRoute)
@@ -78,7 +78,7 @@ function App() {
   if (sessionError) return <main className="centered"><LoadState error={sessionError} retry={() => { setSessionError(''); setCheckingSession(true); setSessionRevision((value) => value + 1) }} /></main>
   if (!user) return <AuthScreen register={route === 'register'} onSubmit={authenticate} />
   return <div className="app-shell">
-    <header className="site-header">
+    <header className="site-header" hidden={route !== 'admin'}>
       <a className="brand" href="#/hub">ТвойВыбор.exe</a>
       <nav aria-label="Основная навигация">
         <a href="#/hub" aria-current={route === 'hub' ? 'page' : undefined}>Хаб</a>
@@ -89,7 +89,7 @@ function App() {
       </nav>
       <div className="account"><span>{user.email}</span><button type="button" onClick={logout}>Выйти</button></div>
     </header>
-    <div hidden={route !== 'hub' && route !== 'building'}><HubScreen api={api} user={user} onOnboardingComplete={setUser} initialBuildingId={route === 'building' ? buildingId() : null} active={route === 'hub' || route === 'building'} /></div>
+    <div hidden={route !== 'hub' && route !== 'building'}><HubScreen api={api} user={user} onOnboardingComplete={setUser} initialBuildingId={route === 'building' ? buildingId() : null} active={route === 'hub' || route === 'building'} logout={logout} /></div>
     {route === 'profile' ? <ProfileScreen api={api} /> : route === 'results' ? <ResultsScreen api={api} /> : route === 'help' ? <HelpScreen /> : route === 'admin' ? user.role === 'admin' ? <AdminScreen api={api} /> : <main className="content"><section className="panel"><h1>Нет доступа</h1><p>Управление контентом доступно только администраторам.</p></section></main> : null}
   </div>
 }
@@ -122,7 +122,7 @@ function LoadState({ error, retry }: { error: string, retry: () => void }) {
   return <div className="panel"><p className="error" role="alert">{error}</p><button type="button" onClick={retry}>Повторить</button></div>
 }
 
-export function HubScreen({ api, user, onOnboardingComplete, initialBuildingId = null, active = true }: { api: ApiClient, user: User, onOnboardingComplete: (user: User) => void, initialBuildingId?: number | 'main' | null, active?: boolean }) {
+export function HubScreen({ api, user, onOnboardingComplete, initialBuildingId = null, active = true, logout = () => {} }: { api: ApiClient, user: User, onOnboardingComplete: (user: User) => void, initialBuildingId?: number | 'main' | null, active?: boolean, logout?: () => void }) {
   const [data, setData] = useState<Direction[] | null>(null)
   const [error, setError] = useState('')
   const [revision, setRevision] = useState(0)
@@ -134,14 +134,22 @@ export function HubScreen({ api, user, onOnboardingComplete, initialBuildingId =
   const knownDirections = useMemo(() => data?.filter((direction) => locationFor(direction.slug)) ?? [], [data])
   async function completeOnboarding() { onOnboardingComplete(await api.completeOnboarding()) }
   return <main className="game-shell">
-    {error ? <LoadState error={error} retry={() => { setError(''); setRevision((value) => value + 1) }} /> : !data ? <p className="game-loading">Загружаем кампус…</p> : <GameShell directions={knownDirections} initialBuildingId={initialBuildingId} firstVisit={!user.onboarding_completed} active={active && user.onboarding_completed} />}
+    {error ? <LoadState error={error} retry={() => { setError(''); setRevision((value) => value + 1) }} /> : !data ? <p className="game-loading">Загружаем кампус…</p> : <GameShell api={api} user={user} logout={logout} directions={knownDirections} initialBuildingId={initialBuildingId} firstVisit={!user.onboarding_completed} active={active && user.onboarding_completed} />}
     {!user.onboarding_completed && <NarratorPrologue onComplete={completeOnboarding} />}
   </main>
 }
 
-function GameShell({ directions, initialBuildingId, firstVisit, active }: { directions: Direction[], initialBuildingId: number | 'main' | null, firstVisit: boolean, active: boolean }) {
+function GameShell({ api, user, logout, directions, initialBuildingId, firstVisit, active }: { api: ApiClient, user: User, logout: () => void, directions: Direction[], initialBuildingId: number | 'main' | null, firstVisit: boolean, active: boolean }) {
+  const [phone, setPhone] = useState(false)
+  const [interaction, setInteraction] = useState<'npc' | 'server' | 'terminal' | null>(null)
+  const [quests, setQuests] = useState<Quest[]>([])
+  const [questError, setQuestError] = useState('')
+  const [questsLoading, setQuestsLoading] = useState(true)
+  const reloadQuests = useCallback(async () => { setQuestsLoading(true); try { setQuests(await api.quests()); setQuestError('') } catch (e) { setQuestError(errorMessage(e)); throw e } finally { setQuestsLoading(false) } }, [api])
+  useEffect(() => { void reloadQuests().catch(() => {}) }, [reloadQuests])
   const [building, setBuilding] = useState<Direction | null>(() => initialBuildingId === 'main' ? mainBuilding : directions.find((item) => item.id === initialBuildingId) ?? (firstVisit ? mainBuilding : null))
   const [dialogue, setDialogue] = useState(false); const [action, setAction] = useState<string | null>(null); const [transition, setTransition] = useState<'idle' | 'closing' | 'loading' | 'opening'>('idle'); const [fullscreen, setFullscreen] = useState(false); const shell = useRef<HTMLDivElement>(null)
+  useEffect(() => { const handle = (event: KeyboardEvent) => { if (!active || dialogue || interaction) return; if (event.key === 'Tab' && !phone && !event.repeat) { event.preventDefault(); setPhone(true) } else if (event.key === 'Escape' && phone) { event.preventDefault(); setPhone(false) } }; window.addEventListener('keydown', handle); return () => window.removeEventListener('keydown', handle) }, [active, phone, interaction, dialogue])
   const actionTrigger = useRef<() => void>(() => {})
   const actionButton = useRef<HTMLButtonElement>(null)
   const campusEntry = useRef<CampusEntry | null>(null)
@@ -174,7 +182,7 @@ function GameShell({ directions, initialBuildingId, firstVisit, active }: { dire
     let timer: number | undefined
     const actionElement = actionButton.current
     const handle = (event: KeyboardEvent) => {
-      if (timer !== undefined || event.repeat || event.code !== 'KeyE' || !active || dialogue || transition !== 'idle' || !actionElement) return
+      if (timer !== undefined || event.repeat || event.code !== 'KeyE' || !active || dialogue || phone || interaction || transition !== 'idle' || !actionElement) return
       event.preventDefault()
       const button = actionElement
       button.classList.add('key-pressed')
@@ -182,12 +190,16 @@ function GameShell({ directions, initialBuildingId, firstVisit, active }: { dire
     }
     window.addEventListener('keydown', handle)
     return () => { window.removeEventListener('keydown', handle); if (timer !== undefined) window.clearTimeout(timer); actionElement?.classList.remove('key-pressed') }
-  }, [active, dialogue, transition, action])
+  }, [active, dialogue, phone, interaction, transition, action])
   async function toggleFullscreen() { if (document.fullscreenElement) await document.exitFullscreen(); else await shell.current?.requestFullscreen() }
   return <section className="play-area" ref={shell} tabIndex={-1} aria-label="Игровая область">
-    <div className="world-controls"><button type="button" onClick={() => void toggleFullscreen()}>{fullscreen ? 'Свернуть' : 'На весь экран'}</button></div>
-    {building && location ? <GameCanvas onActionReady={(invoke) => { actionTrigger.current = invoke }} onReady={() => setSceneReady(true)} directionSlug={building.slug} blocked={!active || dialogue || transition !== 'idle'} onActionChange={setAction} onInteract={() => setDialogue(true)} onExit={() => changePlace(null)} /> : <CampusCanvas onActionReady={(invoke) => { actionTrigger.current = invoke }} initialPosition={campusSpawn} onReady={() => setSceneReady(true)} directions={directions} blocked={!active || transition !== 'idle'} onActionChange={setAction} onEnter={(direction, position) => { campusEntry.current = { slug: direction.slug, position }; changePlace(direction) }} />}
+    <div className="world-controls"><button type="button" onClick={() => setPhone(true)}>Телефон · Tab</button>{user.role === 'admin' && <a href="#/admin">Администрирование</a>}<button type="button" onClick={() => void toggleFullscreen()}>{fullscreen ? 'Свернуть' : 'На весь экран'}</button></div>
+    {building && location ? <GameCanvas onActionReady={(invoke) => { actionTrigger.current = invoke }} onReady={() => setSceneReady(true)} directionSlug={building.slug} questMarker={building.slug === 'backend' && quests.some((q) => q.giver_npc_id === 'boris' && (q.status === 'available' || q.status === 'abandoned'))} blocked={!active || dialogue || phone || !!interaction || transition !== 'idle'} onActionChange={setAction} onInteract={() => building.slug === 'backend' ? setInteraction('npc') : setDialogue(true)} onObject={setInteraction} onExit={() => changePlace(null)} /> : <CampusCanvas onActionReady={(invoke) => { actionTrigger.current = invoke }} initialPosition={campusSpawn} onReady={() => setSceneReady(true)} directions={directions} blocked={!active || phone || !!interaction || transition !== 'idle'} onActionChange={setAction} onEnter={(direction, position) => { campusEntry.current = { slug: direction.slug, position }; changePlace(direction) }} />}
     {action && !dialogue && <button ref={actionButton} type="button" className="action-prompt" onClick={() => actionTrigger.current()}><kbd>E</kbd><span>{action}</span></button>}
+    {questError && <div role="alert" className="quest-error">{questError} <button type="button" onClick={() => void reloadQuests().catch(() => {})}>Повторить</button></div>}
+    {quests.find((q) => q.tracked) && <div className="quest-tracker">★ {quests.find((q) => q.tracked)?.title}: {quests.find((q) => q.tracked)?.objectives.find((o) => !o.completed)?.title}</div>}
+    {phone && <CampusPhone api={api} user={user} quests={quests} loading={questsLoading} loadError={questError} reload={reloadQuests} close={() => { setPhone(false); shell.current?.focus() }} logout={logout} profile={<ProfileScreen api={api} />} results={<ResultsScreen api={api} />} />}
+    {interaction && <QuestInteraction api={api} quest={quests.find((q) => q.slug === 'server-on-vacation')} target={interaction} reload={reloadQuests} close={() => setInteraction(null)} dialogue={() => { setInteraction(null); setDialogue(true) }} />}
     {dialogue && location && <Dialogue location={location} onClose={() => { setDialogue(false); shell.current?.focus() }} /> }
     <div className={`iris-transition iris-${transition}`} aria-hidden="true" />
     {transition === 'loading' && <div className="loading-card" role="status">Новая локация готовится… <small>Совет: хороший лог часто честнее воспоминаний о том, «как всё работало вчера».</small><img className="loading-spinner" src="/content/loading-spinner.svg" alt="" /></div>}
@@ -239,62 +251,7 @@ function HelpScreen() { return <main className="content"><section className="pan
 function NarratorPrologue({ onComplete }: { onComplete: () => Promise<void> }) {
   const [busy, setBusy] = useState(false); const [error, setError] = useState('')
   async function finish() { setBusy(true); setError(''); try { await onComplete() } catch (cause) { setError(errorMessage(cause)); setBusy(false) } }
-  return <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label="Пролог Дяди Дебага"><section className="panel narrator-prologue"><img src="/content/characters/npcs/npc_narrator_portrait.png" alt="Дядя Дебаг" /><div><span className="eyebrow">Дядя Дебаг</span><h2>Добро пожаловать в кампус</h2><p>Здесь можно пробовать разные IT-направления без единственно правильного маршрута. Подходите к корпусам, говорите с мастерами и выбирайте сценарии.</p>{error && <p className="error" role="alert">{error}</p>}<div className="admin-actions"><button className="primary" type="button" disabled={busy} onClick={finish}>Продолжить</button><button type="button" disabled={busy} onClick={finish}>Пропустить</button></div></div></section></div>
-}
-
-export function BuildingScreen({ api, directionId }: { api: ApiClient, directionId: number }) {
-  const [data, setData] = useState<{ direction: Direction, scenarios: Scenario[], progress: Progress[] } | null>(null)
-  const [dialogue, setDialogue] = useState(false); const [error, setError] = useState('')
-  useEffect(() => { let active = true; Promise.all([api.directions(), api.scenarios(), api.progress()]).then(([directions, scenarios, progress]) => { const direction = directions.find((item) => item.id === directionId); if (!direction) throw new Error('Направление не найдено.'); if (active) setData({ direction, scenarios, progress }) }).catch((cause) => { if (active) setError(errorMessage(cause)) }); return () => { active = false } }, [api, directionId])
-  if (error) return <main className="content"><LoadState error={error} retry={() => window.location.hash = '#/hub'} /></main>
-  if (!data) return <main className="content"><p>Открываем корпус…</p></main>
-  const location = locationFor(data.direction.slug)
-  return <main className="content game-page"><GameCanvas directionSlug={data.direction.slug} onInteract={() => setDialogue(true)} onExit={() => { window.location.hash = '#/hub' }} /><section className="panel game-instructions"><button type="button" onClick={() => setDialogue(true)}>Поговорить с мастером</button></section>{dialogue && <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label={`Мастер ${data.direction.title}`}><section className="panel direction-dialogue"><img src={location?.portrait} alt="Портрет мастера" /><div><span className="eyebrow">Мастер {data.direction.title}</span><p>{location?.greeting}</p><button type="button" onClick={() => setDialogue(false)}>Закрыть</button></div></section></div>}</main>
-}
-
-export function GameScreen({ api, scenarioId, Game = GameCanvas }: { api: ApiClient, scenarioId: number, Game?: typeof GameCanvas }) {
-  const [scenario, setScenario] = useState<ScenarioDetail | null>(null)
-  const [task, setTask] = useState<Task | null>(null)
-  const [completedTaskIds, setCompletedTaskIds] = useState<Set<number>>(new Set())
-  const [error, setError] = useState('')
-  const [feedback, setFeedback] = useState<AttemptResult | null>(null)
-  const [revision, setRevision] = useState(0)
-  const [directionSlug, setDirectionSlug] = useState<string | undefined>()
-
-  useEffect(() => {
-    let active = true
-    setScenario(null); setError(''); setFeedback(null)
-    Promise.all([api.scenario(scenarioId), api.directions()]).then(async ([detail, directions]) => {
-      if (detail.state === 'available') await api.startScenario(scenarioId)
-      if (active) {
-        setScenario(detail)
-        setDirectionSlug(directions.find((direction) => direction.id === detail.direction_id)?.slug)
-        setCompletedTaskIds(new Set(detail.completed_task_ids))
-      }
-    }).catch((cause) => { if (active) setError(errorMessage(cause)) })
-    return () => { active = false }
-  }, [api, scenarioId, revision])
-
-  const openTask = useCallback(() => {
-    const playable = scenario?.tasks.find((item) => item.kind === 'choice' && !completedTaskIds.has(item.id))
-    if (playable) setTask(playable)
-    else if (!scenario?.tasks.some((item) => item.kind === 'choice')) setError('В этом сценарии пока нет поддерживаемого задания.')
-  }, [completedTaskIds, scenario])
-
-  function handleResult(result: AttemptResult) {
-    setFeedback(result)
-    if (result.is_correct) setCompletedTaskIds((current) => new Set(current).add(result.task_id))
-  }
-
-  if (error) return <main className="content"><LoadState error={error} retry={() => setRevision((value) => value + 1)} /></main>
-  if (!scenario) return <main className="content"><p>Загружаем игровую локацию…</p></main>
-  return <main className="content game-page">
-    <div className="page-heading"><span className="eyebrow">Игровая локация</span><h1>{scenario.title}</h1><p>{scenario.description}</p><a href="#/hub">Вернуться в хаб</a></div>
-    <Game directionSlug={directionSlug ?? 'backend'} onInteract={openTask} onExit={() => { window.location.hash = '#/hub' }} />
-    <section className="panel game-instructions"><h2>Как пройти задание</h2><p>Подойдите к NPC и нажмите <kbd>E</kbd>. Вопрос откроется в обычном React-интерфейсе, а результат сохранится на сервере.</p>{scenario.tasks.some((item) => item.kind === 'choice' && !completedTaskIds.has(item.id)) ? <button type="button" onClick={openTask}>Открыть задание</button> : <p className="success">Все задания этой локации завершены.</p>}</section>
-    {feedback && <section className="panel world-feedback" role="status"><h2>{feedback.is_correct ? 'NPC доволен решением' : 'NPC просит проверить ответ'}</h2><p>{feedback.explanation}</p><p className="muted">Сохранённый статус сценария: {stateLabels[feedback.scenario_state]}.</p></section>}
-    {task && <TaskModal api={api} task={task} onResult={handleResult} onClose={() => setTask(null)} />}
-  </main>
+  return <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label="Пролог Дяди Дебага"><section className="panel narrator-prologue"><img src="/content/characters/npcs/npc_narrator_portrait.png" alt="Дядя Дебаг" /><div><span className="eyebrow">Дядя Дебаг</span><h2>Добро пожаловать в кампус</h2><p>Здесь можно пробовать разные IT-направления без единственно правильного маршрута. Подходите к корпусам, говорите с мастерами и выбирайте задания.</p>{error && <p className="error" role="alert">{error}</p>}<div className="admin-actions"><button className="primary" type="button" disabled={busy} onClick={finish}>Продолжить</button><button type="button" disabled={busy} onClick={finish}>Пропустить</button></div></div></section></div>
 }
 
 function ProfileScreen({ api }: { api: ApiClient }) {
@@ -309,9 +266,9 @@ function ProfileScreen({ api }: { api: ApiClient }) {
     return () => { active = false }
   }, [api, revision])
   return <main className="content">
-    <div className="page-heading"><span className="eyebrow">Ваш путь</span><h1>Профиль интересов</h1><p>Профиль составляется из сохранённых на сервере событий.</p></div>
+    <div className="page-heading"><span className="eyebrow">Ваш путь</span><h1>Профиль интересов</h1><p>Исторические данные получены из старых заданий и не являются оценкой интереса по новым квестам.</p></div>
     {error ? <LoadState error={error} retry={() => { setError(''); setRevision((value) => value + 1) }} /> : !data ? <p>Загружаем профиль…</p> : <>
-      <section className="panel"><h2>Направления</h2>{Object.keys(data.profile.direction_scores).length === 0 ? <p>Ответьте на задания, чтобы увидеть первые наблюдения.</p> : <ul className="score-list">{Object.entries(data.profile.direction_scores).map(([id, score]) => <li key={id}><span>{data.directions.find((item) => item.id === Number(id))?.title ?? `Направление ${id}`}</span><strong>{score}</strong></li>)}</ul>}<p className="muted">Учтено событий: {data.profile.event_count}</p></section>
+      <section className="panel"><h2>Направления</h2>{Object.keys(data.profile.direction_scores).length === 0 ? <p>Исторических наблюдений пока нет. Новые квесты не оценивают правильность ответов.</p> : <ul className="score-list">{Object.entries(data.profile.direction_scores).map(([id, score]) => <li key={id}><span>{data.directions.find((item) => item.id === Number(id))?.title ?? `Направление ${id}`}</span><strong>{score}</strong></li>)}</ul>}<p className="muted">Учтено событий: {data.profile.event_count}</p></section>
       <section className="panel"><h2>История наблюдений</h2>{data.events.length === 0 ? <p>Событий пока нет.</p> : <ul className="event-list">{data.events.map((event, index) => <li key={`${event.task_id}-${index}`}><strong>{data.directions.find((item) => item.id === event.direction_id)?.title ?? `Направление ${event.direction_id}`}</strong><p>{event.explanation}</p></li>)}</ul>}</section>
     </>}
   </main>
@@ -329,11 +286,11 @@ function ResultsScreen({ api }: { api: ApiClient }) {
     return () => { active = false }
   }, [api, revision])
   return <main className="content">
-    <div className="page-heading"><span className="eyebrow">Отчёт отдела кадров, который никто не просил</span><h1>Результаты</h1><p>Это не психологическая диагностика, а объяснимое наблюдение за действиями в игре.</p></div>
+    <div className="page-heading"><span className="eyebrow">Отчёт отдела кадров, который никто не просил</span><h1>Результаты</h1><p>Отчёт основан на исторических ответах в старых заданиях, а не на новых квестах; это не психологическая диагностика.</p></div>
     {error ? <LoadState error={error} retry={() => { setError(''); setRevision((value) => value + 1) }} /> : !data ? <p>Загружаем результаты…</p> : <>
       <section className="panel"><h2>Что мы увидели в игре</h2><p>Зафиксировано наблюдений: {data.report.event_count}. Завершено заданий: {data.report.completed_task_count}.</p>{data.report.observations.length === 0 ? <p>Пока недостаточно игровых фактов для выводов.</p> : <ul className="event-list">{data.report.observations.map((item) => <li key={item}>{item}</li>)}</ul>}</section>
-      <section className="panel"><h2>Направления для дальнейшего изучения</h2>{data.report.directions.length === 0 ? <p>Пройдите несколько заданий, чтобы появились первые ориентиры.</p> : <ul className="event-list">{data.report.directions.map((item) => <li key={item.direction_id}><strong>{item.title}</strong><p>{item.reason} Учтённый сигнал: {item.score}.</p></li>)}</ul>}{data.report.next_steps.length > 0 && <><h3>Что попробовать дальше</h3><ul className="event-list">{data.report.next_steps.map((item) => <li key={item}>{item}</li>)}</ul></>}</section>
-      <section className="panel"><h2>Текущая рекомендация</h2>{data.recommendation ? <p>{data.recommendation.explanation}</p> : <p>Данных пока недостаточно. Рекомендация появится после первых верных решений.</p>}</section>
+      <section className="panel"><h2>Направления для дальнейшего изучения</h2>{data.report.directions.length === 0 ? <p>Исторических данных пока недостаточно для ориентиров.</p> : <ul className="event-list">{data.report.directions.map((item) => <li key={item.direction_id}><strong>{item.title}</strong><p>{item.reason} Учтённый сигнал: {item.score}.</p></li>)}</ul>}{data.report.next_steps.length > 0 && <><h3>Что попробовать дальше</h3><ul className="event-list">{data.report.next_steps.map((item) => <li key={item}>{item}</li>)}</ul></>}</section>
+      <section className="panel"><h2>Текущая рекомендация</h2>{data.recommendation ? <p>{data.recommendation.explanation}</p> : <p>Исторических данных для рекомендации пока нет.</p>}</section>
       <section className="panel"><h2>Пройденные сценарии</h2><p>{data.scenarios.filter((item) => item.state === 'completed').length} из {data.scenarios.length}</p></section>
       <section className="panel"><h2>Достижения</h2>{data.achievements.length === 0 ? <p>Пока нет достижений.</p> : <ul className="event-list">{data.achievements.map((item) => <li key={item.slug}><strong>{item.title}</strong><p>{item.description}</p></li>)}</ul>}</section>
     </>}

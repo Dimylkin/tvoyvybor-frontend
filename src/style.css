@@ -107,3 +107,21 @@ kbd { border: 1px solid #5a6b89; border-radius: .25rem; padding: .05rem .3rem; b
 .play-area button { transition: transform .1s ease, filter .1s ease, box-shadow .1s ease; }
 .play-area button:active, .play-area button.key-pressed { transform: scale(.96); filter: brightness(1.3); box-shadow: inset 0 2px 8px #0005; }
 .play-area .action-prompt:active, .play-area .action-prompt.key-pressed { transform: translateX(-50%) scale(.96); }
+
+.phone-backdrop { position: absolute; inset: 0; z-index: 80; display: flex; justify-content: flex-end; align-items: center; padding: 1rem; background: #07111c99; }
+.campus-phone { width: min(420px, 100%); height: min(720px, 100%); border: 8px solid #17243a; border-radius: 28px; background: #ecf3f9; color: #17243a; overflow: hidden; box-shadow: 0 20px 50px #0008; }
+.campus-phone header { display: flex; justify-content: space-between; align-items: center; padding: .75rem 1rem; background: #213b5a; color: white; }
+.phone-content { height: calc(100% - 60px); overflow: auto; padding: 1rem; }
+.phone-content .content { padding: 0; width: auto; }
+.phone-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: .5rem; }
+.phone-tabs { display: flex; flex-wrap: wrap; gap: .25rem; }
+.phone-quest { display: flex; flex-direction: column; text-align: left; width: 100%; margin-top: .5rem; }
+.quest-tracker, .quest-error { position: absolute; z-index: 20; top: 4rem; left: 1rem; max-width: 300px; padding: .5rem; color: white; background: #14293de8; border-radius: .5rem; }
+.quest-error { top: 7rem; }
+.quest-interaction { max-width: 520px; max-height: 80vh; overflow: auto; }
+.quest-interaction button { margin: .3rem; }
+.site-header[hidden] { display: none; }
+.game-shell { height: 100vh; min-height: 0; }
+.play-area { min-height: 0; height: min(calc(100vh - 2rem), 690px); }
+.world-controls a { pointer-events: auto; color: #fff; background: #172238dd; padding: .45rem .65rem; border-radius: .5rem; }
+@media (max-width: 760px) { .game-shell { height: 100vh; min-height: 0; } .play-area { min-height: 0; height: calc(100vh - .8rem); } }

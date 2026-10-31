@@ -15,9 +15,7 @@ globalThis.IS_REACT_ACT_ENVIRONMENT = true
 
 const { render, screen, fireEvent, waitFor, cleanup } = await import('@testing-library/react')
 const vite = await createServer({ server: { middlewareMode: true, hmr: false }, appType: 'custom' })
-const { default: App, GameScreen, Dialogue } = await vite.ssrLoadModule('/src/App.tsx')
-const { TaskModal } = await vite.ssrLoadModule('/src/TaskModal.tsx')
-const { ApiClient } = await vite.ssrLoadModule('/src/api.ts')
+const { default: App, Dialogue } = await vite.ssrLoadModule('/src/App.tsx')
 
 const user = { id: 1, email: 'player@example.com', role: 'user', onboarding_completed: true }
 const direction = { id: 3, slug: 'backend', title: 'Backend', description: 'Серверная разработка' }
@@ -31,6 +29,7 @@ function mockApi({ login = false, me = user, meStatus = 200, directions = [direc
     requests.push({ path, authorization })
     if (path === '/api/auth/login' && login) return Response.json({ access_token: 'test-token', token_type: 'bearer' })
     if (path === '/api/auth/me') return meStatus === 401 ? Response.json({ detail: 'Invalid authentication credentials' }, { status: 401 }) : Response.json(me)
+    if (path === '/api/quests') return Response.json([])
     if (path === '/api/directions') return Response.json(directions)
     if (path === '/api/scenarios') return Response.json(scenarios)
     if (path === '/api/progress') return Response.json(progress)
@@ -120,7 +119,7 @@ test('campus keeps entrances inside the scene and exposes fullscreen control', a
   assert.ok(await screen.findByLabelText('Игровой кампус'))
   assert.ok(screen.getByRole('button', { name: 'На весь экран' }))
   assert.equal(screen.queryByRole('button', { name: 'Помощь · F1' }), null)
-  assert.ok(screen.getByRole('link', { name: 'Помощь' }))
+  assert.ok(screen.getByRole('button', { name: 'Телефон · Tab' }))
   assert.equal(screen.queryByText('Первый сценарий'), null)
   assert.equal(screen.queryByRole('button', { name: /Войти:/ }), null)
 })
@@ -154,137 +153,23 @@ test('admin session exposes the protected content screen', async () => {
 
   assert.ok(await screen.findByRole('heading', { name: 'Администрирование' }))
   assert.ok(screen.getByRole('link', { name: 'Администрирование' }))
-  assert.ok(screen.getByText('Новый сценарий'))
+  assert.ok(await screen.findByText('Новый сценарий'))
 })
 
-test('choice modal keeps an incorrect answer retryable and shows server feedback', async () => {
-  let sent = null
-  const api = new ApiClient('/api', () => 'token', () => {}, async (_input, init) => {
-    sent = JSON.parse(init.body)
-    return Response.json({ id: 1, task_id: 9, is_correct: false, reaction: 'retry', explanation: 'Для чтения ресурса используют GET.', scenario_state: 'active' }, { status: 201 })
-  })
-  const results = []
-  render(React.createElement(TaskModal, {
-    api,
-    task: { id: 9, kind: 'choice', title: 'Метод', content: { prompt: 'Как читать?', options: ['GET', 'POST'] } },
-    onResult: (result) => results.push(result),
-    onClose: () => {},
-  }))
-
-  fireEvent.click(screen.getByLabelText('POST'))
-  fireEvent.click(screen.getByRole('button', { name: 'Проверить решение' }))
-  assert.ok(await screen.findByText('Мир реагирует: можно попробовать ещё раз.', { exact: false }))
-  assert.equal(sent.answer, 'POST')
-  assert.match(sent.request_id, /^attempt-|^[0-9a-f-]{36}$/)
-  assert.equal(results[0].reaction, 'retry')
-  assert.ok(screen.getByRole('button', { name: 'Проверить решение' }))
-})
-
-test('choice modal displays validated plot context from server content', () => {
-  const api = new ApiClient('/api', () => 'token', () => {}, async () => Response.json({}))
-  render(React.createElement(TaskModal, {
-    api,
-    task: {
-      id: 11,
-      kind: 'choice',
-      title: 'Кнопка исчезла',
-      content: {
-        context: 'Генеральный директор открыл сайт на планшете, и кнопка решила уйти в отпуск.',
-        prompt: 'Что проверить первым?',
-        options: ['Адаптивную вёрстку', 'Цвет кружки'],
-      },
-    },
-    onResult: () => {},
-    onClose: () => {},
-  }))
-
-  assert.ok(screen.getByText('Генеральный директор открыл сайт на планшете, и кнопка решила уйти в отпуск.'))
-  assert.ok(screen.getByText('Что проверить первым?'))
-})
-
-test('game screen opens a task from the scene and shows completed server feedback', async () => {
-  const calls = []
-  const api = new ApiClient('/api', () => 'token', () => {}, async (input, init) => {
-    const path = new URL(String(input), 'http://localhost:5173').pathname
-    calls.push({ path, method: init?.method })
-    if (path === '/api/scenarios/7') return Response.json({ ...scenario, state: 'available', completed_task_ids: [], tasks: [{ id: 9, kind: 'choice', title: 'Метод', content: { prompt: 'Как читать?', options: ['GET', 'POST'] } }] })
-    if (path === '/api/directions') return Response.json([direction])
-    if (path === '/api/scenarios/7/start') return Response.json({ scenario_id: 7, state: 'active' })
-    if (path === '/api/tasks/9/attempts') return Response.json({ id: 1, task_id: 9, is_correct: true, reaction: 'completed', explanation: 'GET читает ресурс.', scenario_state: 'completed' }, { status: 201 })
-    throw new Error(`Unexpected API request: ${path}`)
-  })
-  function Scene({ onInteract }) { return React.createElement('button', { type: 'button', onClick: onInteract }, 'Поговорить с NPC') }
-  render(React.createElement(GameScreen, { api, scenarioId: 7, Game: Scene }))
-
-  fireEvent.click(await screen.findByRole('button', { name: 'Поговорить с NPC' }))
-  fireEvent.click(screen.getByLabelText('GET'))
-  fireEvent.click(screen.getByRole('button', { name: 'Проверить решение' }))
-  assert.ok(await screen.findByText('NPC доволен решением'))
-  assert.deepEqual(calls.map((item) => `${item.method ?? 'GET'} ${item.path}`), [
-    'GET /api/scenarios/7', 'GET /api/directions', 'PUT /api/scenarios/7/start', 'POST /api/tasks/9/attempts',
-  ])
-})
-
-test('completed game route restores server state without starting the scenario again', async () => {
-  const calls = []
-  const api = new ApiClient('/api', () => 'token', () => {}, async (input, init) => {
-    const path = new URL(String(input), 'http://localhost:5173').pathname
-    calls.push({ path, method: init?.method })
-    if (path === '/api/scenarios/7') return Response.json({ ...scenario, state: 'completed', completed_task_ids: [9], tasks: [{ id: 9, kind: 'choice', title: 'Метод', content: { prompt: 'Как читать?', options: ['GET'] } }] })
-    if (path === '/api/directions') return Response.json([direction])
-    throw new Error(`Unexpected API request: ${path}`)
-  })
-  function Scene() { return React.createElement('div', null, 'Восстановленная сцена') }
-  render(React.createElement(GameScreen, { api, scenarioId: 7, Game: Scene }))
-
-  assert.ok(await screen.findByText('Все задания этой локации завершены.'))
-  assert.equal(screen.getByRole('link', { name: 'Вернуться в хаб' }).getAttribute('href'), '#/hub')
-  assert.deepEqual(calls, [{ path: '/api/scenarios/7', method: undefined }, { path: '/api/directions', method: undefined }])
-})
-
-test('modal reuses its request id after a network failure', async () => {
-  const requestIds = []
-  const api = new ApiClient('/api', () => 'token', () => {}, async (_input, init) => {
-    requestIds.push(JSON.parse(init.body).request_id)
-    if (requestIds.length === 1) throw new TypeError('offline')
-    return Response.json({ id: 2, task_id: 9, is_correct: false, reaction: 'retry', explanation: 'Повторите.', scenario_state: 'active' }, { status: 201 })
-  })
-  render(React.createElement(TaskModal, { api, task: { id: 9, kind: 'choice', title: 'Метод', content: { prompt: 'Как читать?', options: ['GET', 'POST'] } }, onResult: () => {}, onClose: () => {} }))
-  fireEvent.click(screen.getByLabelText('POST'))
-  fireEvent.click(screen.getByRole('button', { name: 'Проверить решение' }))
-  assert.ok(await screen.findByRole('alert'))
-  fireEvent.click(screen.getByRole('button', { name: 'Проверить решение' }))
-  await screen.findByText('Мир реагирует: можно попробовать ещё раз.', { exact: false })
-  assert.equal(requestIds.length, 2)
-  assert.equal(requestIds[0], requestIds[1])
-  assert.match(requestIds[0], /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/)
-})
-
-test('switching header tabs preserves the current building scene', async () => {
+test('opening phone preserves the building scene and allows keyboard navigation', async () => {
   localStorage.setItem('tvoyvybor.accessToken', 'saved-token')
   window.location.hash = '/building/3'
   mockApi()
   render(React.createElement(App))
   const scene = await screen.findByLabelText('Игровая сцена')
-  fireEvent.click(screen.getByRole('link', { name: 'Помощь' }))
-  assert.ok(await screen.findByRole('heading', { name: 'Помощь' }))
-  fireEvent.click(screen.getByRole('link', { name: 'Хаб' }))
-  assert.equal(await screen.findByLabelText('Игровая сцена'), scene)
-  assert.equal(screen.queryByLabelText('Игровой кампус'), null)
+  fireEvent.keyDown(window, { key: 'Tab' })
+  assert.ok(screen.getByRole('dialog', { name: 'CampusOS' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Справка' }))
+  assert.ok(screen.getByRole('heading', { name: 'Справка' }))
+  fireEvent.keyDown(window, { key: 'Escape' })
+  assert.equal(screen.queryByRole('dialog', { name: 'CampusOS' }), null)
+  assert.equal(screen.getByLabelText('Игровая сцена'), scene)
 })
-
-test('switching header tabs preserves the campus scene', async () => {
-  localStorage.setItem('tvoyvybor.accessToken', 'saved-token')
-  window.location.hash = '/hub'
-  mockApi()
-  render(React.createElement(App))
-  const scene = await screen.findByLabelText('Игровой кампус')
-  fireEvent.click(screen.getByRole('link', { name: 'Помощь' }))
-  assert.ok(await screen.findByRole('heading', { name: 'Помощь' }))
-  fireEvent.click(screen.getByRole('link', { name: 'Хаб' }))
-  assert.equal(await screen.findByLabelText('Игровой кампус'), scene)
-})
-
 
 test('dialogue uses one speech panel and keeps all actions in the separate choices panel', async () => {
   const { worldLocations } = await vite.ssrLoadModule('/src/world.ts')
@@ -327,4 +212,55 @@ test('dialogue number keys advance and Escape closes without repeating', async (
   assert.ok(await screen.findByText(worldLocations.backend.choices[0].reaction))
   fireEvent.keyDown(window, { key: 'Escape' })
   await waitFor(() => assert.equal(closed, 1))
+})
+
+test('quest journal shows persisted status and tracks an active quest', async () => {
+  const { CampusPhone } = await vite.ssrLoadModule('/src/campusos/CampusPhone.tsx')
+  const calls = []
+  const quest = { id: 1, slug: 'server-on-vacation', title: 'Сервер ушёл в отпуск', description: 'Починить сервер', category: 'professional', location_slug: 'backend', giver_npc_id: 'boris', status: 'active', accepted_at: null, completed_at: null, tracked: false, objectives: [{ id: 1, title: 'Осмотреть сервер', description: '', objective_type: 'object_inspected', required_count: 1, current_count: 0, completed: false, is_required: true }] }
+  const api = { trackQuest: async (id) => { calls.push(id) } }
+  let reloads = 0
+  render(React.createElement(CampusPhone, { api, user, quests: [quest], reload: async () => { reloads++ }, close: () => {}, logout: () => {}, profile: null, results: null }))
+  fireEvent.click(screen.getByRole('button', { name: 'Задачи' }))
+  fireEvent.click(screen.getByRole('button', { name: /Сервер ушёл в отпуск/ }))
+  assert.ok(screen.getByText(/Осмотреть сервер/))
+  fireEvent.click(screen.getByRole('button', { name: 'Отслеживать' }))
+  await waitFor(() => assert.equal(reloads, 1))
+  assert.deepEqual(calls, [1])
+})
+
+test('game interaction retries an uncertain delivery using the same operation id', async () => {
+  const { QuestInteraction } = await vite.ssrLoadModule('/src/campusos/QuestInteraction.tsx')
+  globalThis.sessionStorage = window.sessionStorage
+  sessionStorage.clear()
+  const ids = []
+  const api = { interact: async (id) => { ids.push(id); if (ids.length === 1) throw new Error('offline'); return { accepted: true, changes: [] } } }
+  const quest = { id: 1, slug: 'server-on-vacation', title: 'Сервер', description: '', category: 'professional', location_slug: 'backend', giver_npc_id: 'boris', status: 'active', accepted_at: null, completed_at: null, tracked: false, objectives: [] }
+  render(React.createElement(QuestInteraction, { api, quest, target: 'server', reload: async () => {}, close: () => {}, dialogue: () => {} }))
+  fireEvent.click(screen.getByRole('button', { name: 'Осмотреть' }))
+  assert.ok(await screen.findByRole('alert'))
+  fireEvent.click(screen.getByRole('button', { name: 'Осмотреть' }))
+  await screen.findByText(/Состояние сервера осмотрено/)
+  assert.equal(ids.length, 2)
+  assert.equal(ids[0], ids[1])
+  sessionStorage.clear()
+})
+
+test('retry keeps the operation id when refreshing the journal fails', async () => {
+  const { QuestInteraction } = await vite.ssrLoadModule('/src/campusos/QuestInteraction.tsx')
+  globalThis.sessionStorage = window.sessionStorage
+  sessionStorage.clear()
+  const ids = []
+  let refreshes = 0
+  const api = { interact: async (id) => { ids.push(id); return { accepted: true, changes: [] } } }
+  const quest = { id: 1, status: 'active', objectives: [] }
+  const reload = async () => { if (++refreshes === 1) throw new Error('offline') }
+  render(React.createElement(QuestInteraction, { api, quest, target: 'server', reload, close: () => {}, dialogue: () => {} }))
+  fireEvent.click(screen.getByRole('button', { name: 'Осмотреть' }))
+  assert.ok(await screen.findByRole('alert'))
+  fireEvent.click(screen.getByRole('button', { name: 'Осмотреть' }))
+  await screen.findByText(/Состояние сервера осмотрено/)
+  assert.equal(ids.length, 2)
+  assert.equal(ids[0], ids[1])
+  sessionStorage.clear()
 })
