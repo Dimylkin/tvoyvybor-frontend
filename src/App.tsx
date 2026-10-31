@@ -2,8 +2,9 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ApiClient, ApiError, type Achievement, type AdminScenario, type AdminScenarioInput, type AdminTask, type AdminTaskInput, type AttemptResult, type Direction, type FinalReport, type InterestEvent, type InterestProfile, type Progress, type Recommendation, type Scenario, type ScenarioDetail, type ScenarioState, type Task, type User } from './api'
 import { GameCanvas } from './GameCanvas'
 import { CampusCanvas } from './CampusCanvas'
+import { returnPosition, type CampusEntry, type CampusPosition } from './campusReturn'
 import { TaskModal } from './TaskModal'
-import { locationFor } from './world'
+import { locationFor, mainBuilding, type WorldLocation } from './world'
 import './style.css'
 
 const tokenKey = 'tvoyvybor.accessToken'
@@ -17,7 +18,7 @@ function currentRoute(): Route {
   return path === 'register' || path === 'hub' || path === 'profile' || path === 'results' || path === 'admin' || path === 'help' ? path : 'login'
 }
 function navigate(route: Route) { window.location.hash = `/${route}` }
-function buildingId() { const value = Number(window.location.hash.slice(11)); return Number.isInteger(value) && value > 0 ? value : null }
+function buildingId() { const id = window.location.hash.slice(11); if (id === 'main') return 'main' as const; const value = Number(id); return Number.isInteger(value) && value > 0 ? value : null }
 function errorMessage(error: unknown): string {
   if (error instanceof ApiError && error.status === 401) return 'Сессия завершилась. Войдите снова.'
   return error instanceof Error ? error.message : 'Не удалось загрузить данные.'
@@ -88,7 +89,8 @@ function App() {
       </nav>
       <div className="account"><span>{user.email}</span><button type="button" onClick={logout}>Выйти</button></div>
     </header>
-    {route === 'profile' ? <ProfileScreen api={api} /> : route === 'results' ? <ResultsScreen api={api} /> : route === 'help' ? <HelpScreen /> : route === 'admin' ? user.role === 'admin' ? <AdminScreen api={api} /> : <main className="content"><section className="panel"><h1>Нет доступа</h1><p>Управление контентом доступно только администраторам.</p></section></main> : <HubScreen api={api} user={user} onOnboardingComplete={setUser} initialBuildingId={route === 'building' ? buildingId() : null} />}
+    <div hidden={route !== 'hub' && route !== 'building'}><HubScreen api={api} user={user} onOnboardingComplete={setUser} initialBuildingId={route === 'building' ? buildingId() : null} active={route === 'hub' || route === 'building'} /></div>
+    {route === 'profile' ? <ProfileScreen api={api} /> : route === 'results' ? <ResultsScreen api={api} /> : route === 'help' ? <HelpScreen /> : route === 'admin' ? user.role === 'admin' ? <AdminScreen api={api} /> : <main className="content"><section className="panel"><h1>Нет доступа</h1><p>Управление контентом доступно только администраторам.</p></section></main> : null}
   </div>
 }
 
@@ -120,7 +122,7 @@ function LoadState({ error, retry }: { error: string, retry: () => void }) {
   return <div className="panel"><p className="error" role="alert">{error}</p><button type="button" onClick={retry}>Повторить</button></div>
 }
 
-export function HubScreen({ api, user, onOnboardingComplete, initialBuildingId = null }: { api: ApiClient, user: User, onOnboardingComplete: (user: User) => void, initialBuildingId?: number | null }) {
+export function HubScreen({ api, user, onOnboardingComplete, initialBuildingId = null, active = true }: { api: ApiClient, user: User, onOnboardingComplete: (user: User) => void, initialBuildingId?: number | 'main' | null, active?: boolean }) {
   const [data, setData] = useState<Direction[] | null>(null)
   const [error, setError] = useState('')
   const [revision, setRevision] = useState(0)
@@ -129,40 +131,110 @@ export function HubScreen({ api, user, onOnboardingComplete, initialBuildingId =
     api.directions().then((directions) => { if (active) setData(directions) }).catch((cause) => { if (active) setError(errorMessage(cause)) })
     return () => { active = false }
   }, [api, revision])
-  const knownDirections = data?.filter((direction) => locationFor(direction.slug)) ?? []
+  const knownDirections = useMemo(() => data?.filter((direction) => locationFor(direction.slug)) ?? [], [data])
   async function completeOnboarding() { onOnboardingComplete(await api.completeOnboarding()) }
   return <main className="game-shell">
-    {error ? <LoadState error={error} retry={() => { setError(''); setRevision((value) => value + 1) }} /> : !data ? <p className="game-loading">Загружаем кампус…</p> : data.length === 0 ? <div className="panel"><p>Пока нет опубликованных направлений.</p></div> : <GameShell directions={knownDirections} initialBuildingId={initialBuildingId} />}
+    {error ? <LoadState error={error} retry={() => { setError(''); setRevision((value) => value + 1) }} /> : !data ? <p className="game-loading">Загружаем кампус…</p> : <GameShell directions={knownDirections} initialBuildingId={initialBuildingId} firstVisit={!user.onboarding_completed} active={active && user.onboarding_completed} />}
     {!user.onboarding_completed && <NarratorPrologue onComplete={completeOnboarding} />}
   </main>
 }
 
-function GameShell({ directions, initialBuildingId }: { directions: Direction[], initialBuildingId: number | null }) {
-  const [building, setBuilding] = useState<Direction | null>(() => directions.find((item) => item.id === initialBuildingId) ?? null)
-  const [dialogue, setDialogue] = useState(false); const [choice, setChoice] = useState<number | null>(null); const [action, setAction] = useState<string | null>(null); const [transition, setTransition] = useState<'idle' | 'closing' | 'loading' | 'opening'>('idle'); const [fullscreen, setFullscreen] = useState(false); const shell = useRef<HTMLDivElement>(null)
+function GameShell({ directions, initialBuildingId, firstVisit, active }: { directions: Direction[], initialBuildingId: number | 'main' | null, firstVisit: boolean, active: boolean }) {
+  const [building, setBuilding] = useState<Direction | null>(() => initialBuildingId === 'main' ? mainBuilding : directions.find((item) => item.id === initialBuildingId) ?? (firstVisit ? mainBuilding : null))
+  const [dialogue, setDialogue] = useState(false); const [action, setAction] = useState<string | null>(null); const [transition, setTransition] = useState<'idle' | 'closing' | 'loading' | 'opening'>('idle'); const [fullscreen, setFullscreen] = useState(false); const shell = useRef<HTMLDivElement>(null)
+  const actionTrigger = useRef<() => void>(() => {})
+  const actionButton = useRef<HTMLButtonElement>(null)
+  const campusEntry = useRef<CampusEntry | null>(null)
+  const [campusSpawn, setCampusSpawn] = useState<CampusPosition | undefined>()
   const location = building ? locationFor(building.slug) : undefined
-  useEffect(() => { const selected = directions.find((item) => item.id === initialBuildingId) ?? null; if (selected) setBuilding(selected) }, [directions, initialBuildingId])
+  const [sceneReady, setSceneReady] = useState(false); const [minimumElapsed, setMinimumElapsed] = useState(false)
+  useEffect(() => {
+    if (transition !== 'loading') return
+    const timer = window.setTimeout(() => setMinimumElapsed(true), 2400)
+    return () => window.clearTimeout(timer)
+  }, [transition])
+  useEffect(() => {
+    if (transition !== 'loading' || !sceneReady || !minimumElapsed) return
+    setTransition('opening')
+  }, [transition, sceneReady, minimumElapsed])
+  useEffect(() => {
+    if (transition !== 'opening') return
+    const timer = window.setTimeout(() => setTransition('idle'), 320)
+    return () => window.clearTimeout(timer)
+  }, [transition])
+  useEffect(() => { const selected = initialBuildingId === 'main' ? mainBuilding : directions.find((item) => item.id === initialBuildingId) ?? null; if (selected) setBuilding(selected) }, [directions, initialBuildingId])
   useEffect(() => { const sync = () => { setFullscreen(document.fullscreenElement === shell.current); if (!document.fullscreenElement) shell.current?.focus() }; document.addEventListener('fullscreenchange', sync); return () => document.removeEventListener('fullscreenchange', sync) }, [])
-  useEffect(() => { const openHelp = (event: KeyboardEvent) => { if (event.key === 'F1') { event.preventDefault(); window.location.hash = '#/help' } }; window.addEventListener('keydown', openHelp); return () => window.removeEventListener('keydown', openHelp) }, [])
   const changePlace = useCallback((next: Direction | null) => {
     if (transition !== 'idle') return
-    setDialogue(false); setChoice(null); setTransition('closing')
-    window.setTimeout(() => { setBuilding(next); window.location.hash = next ? `#/building/${next.id}` : '#/hub'; setTransition('loading') }, 280)
-    window.setTimeout(() => setTransition('opening'), 5300); window.setTimeout(() => setTransition('idle'), 5620)
-  }, [transition])
+    if (!next && building) setCampusSpawn(returnPosition(building.slug, campusEntry.current))
+    setAction(null); setDialogue(false); setSceneReady(false); setMinimumElapsed(false); setTransition('closing')
+    window.setTimeout(() => { setBuilding(next); if (currentRoute() === 'hub' || currentRoute() === 'building') window.location.hash = next ? `#/building/${next.slug === 'narrator' ? 'main' : next.id}` : '#/hub'; setTransition('loading') }, 280)
+  }, [transition, building])
+  useEffect(() => {
+    let timer: number | undefined
+    const actionElement = actionButton.current
+    const handle = (event: KeyboardEvent) => {
+      if (timer !== undefined || event.repeat || event.code !== 'KeyE' || !active || dialogue || transition !== 'idle' || !actionElement) return
+      event.preventDefault()
+      const button = actionElement
+      button.classList.add('key-pressed')
+      timer = window.setTimeout(() => { timer = undefined; button.classList.remove('key-pressed'); button.click() }, 120)
+    }
+    window.addEventListener('keydown', handle)
+    return () => { window.removeEventListener('keydown', handle); if (timer !== undefined) window.clearTimeout(timer); actionElement?.classList.remove('key-pressed') }
+  }, [active, dialogue, transition, action])
   async function toggleFullscreen() { if (document.fullscreenElement) await document.exitFullscreen(); else await shell.current?.requestFullscreen() }
-  const reaction = choice === null ? undefined : location?.choices[choice]?.reaction
   return <section className="play-area" ref={shell} tabIndex={-1} aria-label="Игровая область">
-    <div className="world-controls"><button type="button" onClick={() => { window.location.hash = '#/help' }}>Помощь · F1</button><button type="button" onClick={() => void toggleFullscreen()}>{fullscreen ? 'Свернуть' : 'На весь экран'}</button></div>
-    {building && location ? <GameCanvas directionSlug={building.slug} blocked={dialogue || transition !== 'idle'} onActionChange={setAction} onInteract={() => setDialogue(true)} onExit={() => changePlace(null)} /> : <CampusCanvas directions={directions} blocked={transition !== 'idle'} onActionChange={setAction} onEnter={(direction) => changePlace(direction)} />}
-    {action && !dialogue && <div className="action-prompt"><kbd>E</kbd><span>{action}</span></div>}
-    {dialogue && location && <>{choice === null && <div className="dialogue-choices"><strong>Выберите ответ</strong>{location.choices.map((item, index) => <button key={item.text} type="button" onClick={() => setChoice(index)}>{item.text}</button>)}</div>}{choice !== null && <div className="dialogue-overlay player-line"><img src="/content/characters/player/player_robot_front.png" alt="Стажёр Ноль" /><div className="dialogue-copy"><strong>Стажёр Ноль</strong><p>{location.choices[choice].text}</p></div></div>}<div className={`dialogue-overlay ${choice !== null ? 'npc-reaction' : ''}`} role="dialog" aria-modal="true" aria-label={location.name}><img src={choice === null ? location.portrait : `/content/characters/npcs/emotions/${location.slug}/${location.choices[choice].emotion}.png`} alt={`Портрет ${location.name}`} /><div className="dialogue-copy"><strong>{location.name}</strong><p>{reaction ?? location.greeting}</p>{choice !== null && <button type="button" className="primary" onClick={() => { setChoice(null) }}>Выбрать другую тему</button>}<button type="button" onClick={() => { setDialogue(false); setChoice(null); shell.current?.focus() }}>Завершить разговор</button></div></div></>}
+    <div className="world-controls"><button type="button" onClick={() => void toggleFullscreen()}>{fullscreen ? 'Свернуть' : 'На весь экран'}</button></div>
+    {building && location ? <GameCanvas onActionReady={(invoke) => { actionTrigger.current = invoke }} onReady={() => setSceneReady(true)} directionSlug={building.slug} blocked={!active || dialogue || transition !== 'idle'} onActionChange={setAction} onInteract={() => setDialogue(true)} onExit={() => changePlace(null)} /> : <CampusCanvas onActionReady={(invoke) => { actionTrigger.current = invoke }} initialPosition={campusSpawn} onReady={() => setSceneReady(true)} directions={directions} blocked={!active || transition !== 'idle'} onActionChange={setAction} onEnter={(direction, position) => { campusEntry.current = { slug: direction.slug, position }; changePlace(direction) }} />}
+    {action && !dialogue && <button ref={actionButton} type="button" className="action-prompt" onClick={() => actionTrigger.current()}><kbd>E</kbd><span>{action}</span></button>}
+    {dialogue && location && <Dialogue location={location} onClose={() => { setDialogue(false); shell.current?.focus() }} /> }
     <div className={`iris-transition iris-${transition}`} aria-hidden="true" />
-    {transition === 'loading' && <div className="loading-card" role="status">Новая локация готовится… <small>Совет: хороший лог часто честнее воспоминаний о том, «как всё работало вчера».</small></div>}
+    {transition === 'loading' && <div className="loading-card" role="status">Новая локация готовится… <small>Совет: хороший лог часто честнее воспоминаний о том, «как всё работало вчера».</small><img className="loading-spinner" src="/content/loading-spinner.svg" alt="" /></div>}
   </section>
 }
 
-function HelpScreen() { return <main className="content"><section className="panel"><h1>Помощь</h1><p>Это прогулка по IT-кампусу: разговаривайте с мастерами и выбирайте темы без правильных ответов или оценок.</p><ul className="event-list"><li><strong>WASD / стрелки</strong><p>Движение по доступным дорожкам.</p></li><li><strong>E</strong><p>Войти в корпус, поговорить с мастером или выйти в хаб.</p></li><li><strong>Fullscreen</strong><p>Кнопка «На весь экран» разворачивает игровое окно; выход — Esc.</p></li><li><strong>F1</strong><p>Открывает эту справку из игры.</p></li></ul></section></main> }
+export function Dialogue({ location, onClose }: { location: WorldLocation, onClose: () => void }) {
+  const [choice, setChoice] = useState<number | null>(null)
+  const panelRef = useRef<HTMLDivElement>(null)
+  const timerRef = useRef<number | undefined>(undefined)
+  const [pressed, setPressed] = useState<string | null>(null)
+  const [speaker, setSpeaker] = useState<'npc' | 'player'>('npc')
+  const selected = choice === null ? undefined : location.choices[choice]
+  const playerSpeaking = speaker === 'player' && selected !== undefined
+  const name = playerSpeaking ? 'Стажёр Ноль' : location.name
+  const text = playerSpeaking ? selected.text : selected?.reaction ?? location.greeting
+  const portrait = playerSpeaking ? '/content/characters/player/player_robot_front.png' : selected ? `/content/characters/npcs/emotions/${location.slug}/${selected.emotion}.png` : location.portrait
+
+  useEffect(() => {
+    const handle = (event: KeyboardEvent) => {
+      if (event.repeat || timerRef.current !== undefined) return
+      const key = event.key === 'Escape' ? 'Escape' : /^[0-9]$/.test(event.key) ? event.key : null
+      if (!key) return
+      const button = panelRef.current?.querySelector<HTMLButtonElement>(`button[data-shortcut="${key}"]`)
+      if (!button) return
+      event.preventDefault()
+      setPressed(key)
+      timerRef.current = window.setTimeout(() => { timerRef.current = undefined; setPressed(null); button.click() }, 120)
+    }
+    window.addEventListener('keydown', handle)
+    return () => { window.removeEventListener('keydown', handle); if (timerRef.current !== undefined) { window.clearTimeout(timerRef.current); timerRef.current = undefined } }
+  }, [])
+
+  return <div className="dialogue-interface" role="dialog" aria-modal="true" aria-label={`Разговор: ${location.name}`}>
+    <div ref={panelRef} className="dialogue-choices" aria-label="Действия в диалоге">
+      {choice === null ? location.choices.map((item, index) => <button key={item.text} data-shortcut={String((index + 1) % 10)} className={pressed === String((index + 1) % 10) ? 'key-pressed' : undefined} type="button" onClick={() => { setChoice(index); setSpeaker('player') }}><kbd aria-hidden="true">{(index + 1) % 10}</kbd><span>{item.text}</span></button>) : playerSpeaking ? <button data-shortcut="1" className={pressed === '1' ? 'key-pressed' : undefined} type="button" onClick={() => setSpeaker('npc')}><kbd aria-hidden="true">1</kbd><span>Продолжить</span></button> : <button data-shortcut="1" className={pressed === '1' ? 'key-pressed' : undefined} type="button" onClick={() => setChoice(null)}><kbd aria-hidden="true">1</kbd><span>Выбрать другую тему</span></button>}
+      <button data-shortcut="Escape" className={`dialogue-end${pressed === 'Escape' ? ' key-pressed' : ''}`} type="button" onClick={onClose}><kbd aria-hidden="true">Esc</kbd><span>Завершить разговор</span></button>
+    </div>
+    <div className={`dialogue-overlay${playerSpeaking ? ' player-line' : ''}`}>
+      {!playerSpeaking && <img src={portrait} alt={`Портрет ${name}`} />}
+      <div className="dialogue-copy"><strong>{name}</strong><p>{text}</p></div>
+      {playerSpeaking && <img src={portrait} alt={`Портрет ${name}`} />}
+    </div>
+  </div>
+}
+
+function HelpScreen() { return <main className="content"><section className="panel"><h1>Помощь</h1><p>Это прогулка по IT-кампусу: разговаривайте с мастерами и выбирайте темы без правильных ответов или оценок.</p><ul className="event-list"><li><strong>WASD / стрелки</strong><p>Движение по доступным дорожкам.</p></li><li><strong>E</strong><p>Войти в корпус, поговорить с мастером или выйти в хаб.</p></li><li><strong>Fullscreen</strong><p>Кнопка «На весь экран» разворачивает игровое окно; выход — Esc.</p></li></ul></section></main> }
 
 function NarratorPrologue({ onComplete }: { onComplete: () => Promise<void> }) {
   const [busy, setBusy] = useState(false); const [error, setError] = useState('')

@@ -1,3 +1,6 @@
+import type { Direction } from './api'
+
+export const mainBuilding: Direction = { id: 0, slug: 'narrator', title: 'Главный корпус', description: '' }
 export interface DialogueChoice { text: string, reaction: string, emotion: 'friendly' | 'thinking' | 'confused' | 'surprised' }
 export interface Rect { x: number, y: number, width: number, height: number }
 
@@ -20,8 +23,20 @@ export interface WorldLocation {
 }
 
 export const worldLocations: Record<string, WorldLocation> = {
+  narrator: {
+    slug: 'narrator', label: 'Главный корпус', name: 'Дядя Дебаг', campusPortal: { x: 400, y: 165, radius: 35 }, npc: { x: 400, y: 220 }, exit: { x: 400, y: 435 }, floor: { top: 205, bottom: 415 }, scale: { min: .11, max: .16 },
+    interior: '/content/backgrounds/interior_main.png', npcBase: '/content/characters/npcs/npc_narrator_base.png',
+    portrait: '/content/characters/npcs/npc_narrator_portrait.png',
+    greeting: 'Добро пожаловать в кампус! Чем я могу помочь?',
+    choices: [
+      { text: 'Что здесь можно делать?', reaction: 'Исследуйте кампус, заходите в корпуса и знакомьтесь с мастерами разных IT-направлений.', emotion: 'friendly' },
+      { text: 'С какого направления начать?', reaction: 'Выбирайте то, что любопытно именно вам. Здесь можно попробовать разные направления и вернуться к любому из них.', emotion: 'thinking' },
+      { text: 'Как выйти на площадь?', reaction: 'Дверь внизу зала ведёт на главную площадь. Подойдите к ней и нажмите E.', emotion: 'friendly' },
+    ],
+    walkable: [{ x: 82, y: 205, width: 636, height: 210 }], blocking: [],
+  },
   backend: {
-    slug: 'backend', label: 'Backend', name: 'Борис Бэкендович', campusPortal: { x: 182, y: 282, radius: 56 }, npc: { x: 606, y: 334 }, exit: { x: 114, y: 348 }, floor: { top: 205, bottom: 415 }, scale: { min: .11, max: .16 },
+    slug: 'backend', label: 'Backend', name: 'Борис Бэкендович', campusPortal: { x: 125, y: 245, radius: 40 }, npc: { x: 175, y: 195 }, exit: { x: 400, y: 435 }, floor: { top: 205, bottom: 415 }, scale: { min: .11, max: .16 },
     interior: '/content/backgrounds/interior_backend.png', npcBase: '/content/characters/npcs/npc_backend_base.png',
     portrait: '/content/characters/npcs/npc_backend_portrait.png',
     greeting: 'Я слежу, чтобы системы отвечали честно и вовремя. С чего начнём?',
@@ -33,7 +48,7 @@ export const worldLocations: Record<string, WorldLocation> = {
     walkable: [{ x: 82, y: 205, width: 636, height: 210 }], blocking: [{ x: 245, y: 220, width: 165, height: 95 }, { x: 455, y: 205, width: 110, height: 78 }],
   },
   frontend: {
-    slug: 'frontend', label: 'Frontend', name: 'Фронтослав Пиксельевич', campusPortal: { x: 401, y: 233, radius: 54 }, npc: { x: 598, y: 336 }, exit: { x: 116, y: 348 }, floor: { top: 205, bottom: 415 }, scale: { min: .11, max: .16 },
+    slug: 'frontend', label: 'Frontend', name: 'Фронтина Пиксельевна', campusPortal: { x: 675, y: 255, radius: 40 }, npc: { x: 630, y: 336 }, exit: { x: 400, y: 435 }, floor: { top: 205, bottom: 415 }, scale: { min: .11, max: .16 },
     interior: '/content/backgrounds/interior_frontend.png', npcBase: '/content/characters/npcs/npc_frontend_base.png',
     portrait: '/content/characters/npcs/npc_frontend_portrait.png',
     greeting: 'Интерфейс — это разговор с человеком. Что вам интереснее в этом разговоре?',
@@ -45,7 +60,7 @@ export const worldLocations: Record<string, WorldLocation> = {
     walkable: [{ x: 82, y: 205, width: 636, height: 210 }], blocking: [{ x: 250, y: 225, width: 155, height: 85 }, { x: 445, y: 215, width: 120, height: 95 }],
   },
   analytics: {
-    slug: 'analytics', label: 'Analytics', name: 'Анна Литикова', campusPortal: { x: 636, y: 282, radius: 56 }, npc: { x: 593, y: 335 }, exit: { x: 116, y: 348 }, floor: { top: 205, bottom: 415 }, scale: { min: .11, max: .16 },
+    slug: 'analytics', label: 'Analytics', name: 'Анна Литикова', campusPortal: { x: 135, y: 515, radius: 40 }, npc: { x: 400, y: 145 }, exit: { x: 400, y: 435 }, floor: { top: 205, bottom: 415 }, scale: { min: .11, max: .16 },
     interior: '/content/backgrounds/interior_analytics.png', npcBase: '/content/characters/npcs/npc_analytics_base.png',
     portrait: '/content/characters/npcs/npc_analytics_portrait.png',
     greeting: 'За каждым числом есть история. Какую историю попробуем услышать?',
@@ -58,8 +73,5 @@ export const worldLocations: Record<string, WorldLocation> = {
   },
 }
 
-export const devOpsSpot = { x: 710, y: 370, label: 'DevOps скоро' }
-export const campusWalkable: Rect[] = [{ x: 28, y: 90, width: 744, height: 365 }]
-export const campusBlocking: Rect[] = [{ x: 25, y: 92, width: 185, height: 130 }, { x: 275, y: 90, width: 250, height: 105 }, { x: 585, y: 92, width: 185, height: 130 }, { x: 245, y: 350, width: 330, height: 70 }]
-export function isWalkable(x: number, y: number, walkable: Rect[], blocking: Rect[]) { return walkable.some((area) => x >= area.x && x <= area.x + area.width && y >= area.y && y <= area.y + area.height) && !blocking.some((area) => x >= area.x && x <= area.x + area.width && y >= area.y && y <= area.y + area.height) }
+export const devOpsSpot = { x: 650, y: 530, label: 'DevOps скоро' }
 export function locationFor(slug: string): WorldLocation | undefined { return worldLocations[slug] }
