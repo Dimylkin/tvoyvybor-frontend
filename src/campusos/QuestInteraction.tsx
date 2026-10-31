@@ -8,14 +8,12 @@ export function QuestInteraction({ api, quest, target, close, reload, dialogue }
   const [port, setPort] = useState(8000)
   const [message, setMessage] = useState('')
   const pending = useRef<{ key: string, id: string } | null>(null)
-  async function run(action: () => Promise<unknown>, success: string) { setBusy(true); setError(''); try { await action(); await reload(); setMessage(success) } catch (e) { setError(e instanceof Error && e.message === 'Configuration check failed' ? 'Проверка не прошла: порт сервера не совпадает с портом прокси.' : e instanceof Error ? e.message : 'Не удалось выполнить действие') } finally { setBusy(false) } }
+  async function run(action: () => Promise<unknown>, success: string) { setBusy(true); setError(''); try { await action(); await reload(); if (pending.current) { sessionStorage.removeItem(`quest-event:${pending.current.key}`); pending.current = null } setMessage(success) } catch (e) { setError(e instanceof Error && e.message === 'Configuration check failed' ? 'Проверка не прошла: порт сервера не совпадает с портом прокси.' : e instanceof Error ? e.message : 'Не удалось выполнить действие') } finally { setBusy(false) } }
   async function event(kind: string, targetKey: string, payload: Record<string, unknown> = {}) {
     const key = JSON.stringify([kind, targetKey, payload])
     if (!pending.current || pending.current.key !== key) pending.current = { key, id: sessionStorage.getItem(`quest-event:${key}`) ?? crypto.randomUUID() }
     sessionStorage.setItem(`quest-event:${key}`, pending.current.id)
     await api.interact(pending.current.id, kind, targetKey, payload)
-    sessionStorage.removeItem(`quest-event:${key}`)
-    pending.current = null
   }
   const current = quest?.objectives.find((o) => !o.completed)
   return <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label="Взаимодействие"><section className="panel quest-interaction">

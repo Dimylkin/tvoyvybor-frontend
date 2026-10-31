@@ -245,3 +245,22 @@ test('game interaction retries an uncertain delivery using the same operation id
   assert.equal(ids[0], ids[1])
   sessionStorage.clear()
 })
+
+test('retry keeps the operation id when refreshing the journal fails', async () => {
+  const { QuestInteraction } = await vite.ssrLoadModule('/src/campusos/QuestInteraction.tsx')
+  globalThis.sessionStorage = window.sessionStorage
+  sessionStorage.clear()
+  const ids = []
+  let refreshes = 0
+  const api = { interact: async (id) => { ids.push(id); return { accepted: true, changes: [] } } }
+  const quest = { id: 1, status: 'active', objectives: [] }
+  const reload = async () => { if (++refreshes === 1) throw new Error('offline') }
+  render(React.createElement(QuestInteraction, { api, quest, target: 'server', reload, close: () => {}, dialogue: () => {} }))
+  fireEvent.click(screen.getByRole('button', { name: 'Осмотреть' }))
+  assert.ok(await screen.findByRole('alert'))
+  fireEvent.click(screen.getByRole('button', { name: 'Осмотреть' }))
+  await screen.findByText(/Состояние сервера осмотрено/)
+  assert.equal(ids.length, 2)
+  assert.equal(ids[0], ids[1])
+  sessionStorage.clear()
+})
