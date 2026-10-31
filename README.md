@@ -12,17 +12,46 @@ Code/
 └── tvoyvybor-frontend/
 ```
 
-Нужны Docker и Docker Compose. Из `tvoyvybor-frontend` выполните:
+Нужны Docker Compose, Node.js (22 или новее) и Python 3.12 или новее.
+Для нового окружения создайте `.env` из `.env.example` и замените JWT-секрет.
+Если `.env` уже существует, сохраните его. Значения PostgreSQL и JWT должны
+совпадать с настройками backend; пароль в URL должен быть URL-кодирован.
+Из каталога frontend:
 
 ```sh
-cp .env.example .env
-docker compose up --build -d
-docker compose ps
+cp .env.example .env  # только если .env ещё нет
+npm ci
+docker compose up -d db
 ```
 
-Frontend доступен на <http://localhost:5173>, backend — на <http://localhost:8000>, healthcheck — <http://localhost:8000/health>. PostgreSQL доступен backend-контейнеру по имени `db`; данные сохраняются в Docker volume `postgres_data`.
-Перед стартом backend Compose применяет миграции Alembic.
-Браузер обращается к backend через `/api`: Vite перенаправляет эти запросы на сервис `backend` в Compose. `VITE_API_BASE_URL` позволяет изменить адрес API при необходимости. Для демонстрационного контента этапа 6 после старта выполните `docker compose run --rm backend python -m scripts.seed_stage6`.
+PostgreSQL доступен только на `127.0.0.1:5433`; его данные сохраняются в
+Compose volume `postgres_data`. Порт 5432 на хосте не используется. Для
+существующего стенда используйте тот же Compose project (например, добавьте
+`-p open-world-campus-ui-fixes-local` ко всем командам Compose), иначе будет
+создан другой volume. При первом запуске новой базы примените миграции по
+инструкции backend. Значения POSTGRES_* при повторном запуске не меняют уже
+инициализированную базу.
+
+В отдельных терминалах запустите приложения:
+
+```sh
+cd ../tvoyvybor-backend && make dev-start
+# в другом терминале, из tvoyvybor-frontend:
+make dev-start
+```
+
+Игра: <http://127.0.0.1:5173>, API: <http://127.0.0.1:8000/docs>,
+проверка БД: <http://127.0.0.1:8000/health>. Vite проксирует `/api` на
+локальный backend; при необходимости адрес прокси задаётся переменной процесса
+`VITE_BACKEND_PROXY`. Каждый процесс останавливается через Ctrl+C, база —
+`docker compose stop db` с тем же именем проекта. Данные сохраняются.
+Если порт занят, остановите только принадлежащий вам процесс; при ошибке 503
+проверьте контейнер, URL и учётные данные базы. Если зависимости отсутствуют,
+повторите `npm ci` или настройку backend из его README.
+
+Полный контейнерный запуск по-прежнему доступен через `docker compose up --build`;
+в нём Vite обращается к `backend:8000`, а миграции применяются при старте API.
+Для демонстрационного контента используйте seed по инструкции backend.
 
 После регистрации Дядя Дебаг один раз представит кампус: отметка хранится на
 аккаунте, а не в браузере. В кампусе подойдите к корпусу Backend, Frontend или
