@@ -153,7 +153,7 @@ test('admin session exposes the protected content screen', async () => {
 
   assert.ok(await screen.findByRole('heading', { name: 'Администрирование' }))
   assert.ok(screen.getByRole('link', { name: 'Администрирование' }))
-  assert.ok(screen.getByText('Новый сценарий'))
+  assert.ok(await screen.findByText('Новый сценарий'))
 })
 
 test('opening phone preserves the building scene and allows keyboard navigation', async () => {
