@@ -1,27 +1,29 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ApiClient, ApiError, type Achievement, type AdminScenario, type AdminScenarioInput, type AdminTask, type AdminTaskInput, type AttemptResult, type Direction, type FinalReport, type InterestEvent, type InterestProfile, type Progress, type Recommendation, type Scenario, type ScenarioDetail, type ScenarioState, type Task, type User } from './api'
 import { GameCanvas } from './GameCanvas'
+import { CampusCanvas } from './CampusCanvas'
+import { returnPosition, type CampusEntry, type CampusPosition } from './campusReturn'
 import { TaskModal } from './TaskModal'
+import { locationFor, mainBuilding, type WorldLocation } from './world'
 import './style.css'
 
 const tokenKey = 'tvoyvybor.accessToken'
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || '/api'
-type Route = 'login' | 'register' | 'hub' | 'profile' | 'results' | 'admin' | 'game'
+type Route = 'login' | 'register' | 'hub' | 'building' | 'profile' | 'results' | 'admin' | 'game' | 'help'
 
 function currentRoute(): Route {
   const path = window.location.hash.slice(2)
   if (path.startsWith('game/')) return 'game'
-  return path === 'register' || path === 'hub' || path === 'profile' || path === 'results' || path === 'admin' ? path : 'login'
+  if (path.startsWith('building/')) return 'building'
+  return path === 'register' || path === 'hub' || path === 'profile' || path === 'results' || path === 'admin' || path === 'help' ? path : 'login'
 }
 function navigate(route: Route) { window.location.hash = `/${route}` }
-function gameScenarioId() { const value = Number(window.location.hash.slice(7)); return Number.isInteger(value) && value > 0 ? value : null }
+function buildingId() { const id = window.location.hash.slice(11); if (id === 'main') return 'main' as const; const value = Number(id); return Number.isInteger(value) && value > 0 ? value : null }
 function errorMessage(error: unknown): string {
   if (error instanceof ApiError && error.status === 401) return 'Сессия завершилась. Войдите снова.'
   return error instanceof Error ? error.message : 'Не удалось загрузить данные.'
 }
-const stateLabels: Record<ScenarioState, string> = {
-  locked: 'Закрыт', available: 'Доступен', active: 'Начат', completed: 'Завершён', skipped: 'Пропущен',
-}
+const stateLabels: Record<ScenarioState, string> = { locked: 'Закрыт', available: 'Доступен', active: 'Начат', completed: 'Завершён', skipped: 'Пропущен' }
 
 function App() {
   const [route, setRoute] = useState(currentRoute)
@@ -82,11 +84,13 @@ function App() {
         <a href="#/hub" aria-current={route === 'hub' ? 'page' : undefined}>Хаб</a>
         <a href="#/profile" aria-current={route === 'profile' ? 'page' : undefined}>Профиль</a>
         <a href="#/results" aria-current={route === 'results' ? 'page' : undefined}>Результаты</a>
+        <a href="#/help" aria-current={route === 'help' ? 'page' : undefined}>Помощь</a>
         {user.role === 'admin' && <a href="#/admin" aria-current={route === 'admin' ? 'page' : undefined}>Администрирование</a>}
       </nav>
       <div className="account"><span>{user.email}</span><button type="button" onClick={logout}>Выйти</button></div>
     </header>
-    {route === 'profile' ? <ProfileScreen api={api} /> : route === 'results' ? <ResultsScreen api={api} /> : route === 'admin' ? user.role === 'admin' ? <AdminScreen api={api} /> : <main className="content"><section className="panel"><h1>Нет доступа</h1><p>Управление контентом доступно только администраторам.</p></section></main> : route === 'game' && gameScenarioId() ? <GameScreen api={api} scenarioId={gameScenarioId()!} /> : <HubScreen api={api} />}
+    <div hidden={route !== 'hub' && route !== 'building'}><HubScreen api={api} user={user} onOnboardingComplete={setUser} initialBuildingId={route === 'building' ? buildingId() : null} active={route === 'hub' || route === 'building'} /></div>
+    {route === 'profile' ? <ProfileScreen api={api} /> : route === 'results' ? <ResultsScreen api={api} /> : route === 'help' ? <HelpScreen /> : route === 'admin' ? user.role === 'admin' ? <AdminScreen api={api} /> : <main className="content"><section className="panel"><h1>Нет доступа</h1><p>Управление контентом доступно только администраторам.</p></section></main> : null}
   </div>
 }
 
@@ -118,31 +122,134 @@ function LoadState({ error, retry }: { error: string, retry: () => void }) {
   return <div className="panel"><p className="error" role="alert">{error}</p><button type="button" onClick={retry}>Повторить</button></div>
 }
 
-function HubScreen({ api }: { api: ApiClient }) {
-  const [data, setData] = useState<{ directions: Direction[], scenarios: Scenario[], progress: Progress[] } | null>(null)
+export function HubScreen({ api, user, onOnboardingComplete, initialBuildingId = null, active = true }: { api: ApiClient, user: User, onOnboardingComplete: (user: User) => void, initialBuildingId?: number | 'main' | null, active?: boolean }) {
+  const [data, setData] = useState<Direction[] | null>(null)
   const [error, setError] = useState('')
   const [revision, setRevision] = useState(0)
   useEffect(() => {
     let active = true
-    Promise.all([api.directions(), api.scenarios(), api.progress()]).then(([directions, scenarios, progress]) => {
-      if (active) setData({ directions, scenarios, progress })
-    }).catch((cause) => { if (active) setError(errorMessage(cause)) })
+    api.directions().then((directions) => { if (active) setData(directions) }).catch((cause) => { if (active) setError(errorMessage(cause)) })
     return () => { active = false }
   }, [api, revision])
-  return <main className="content">
-    <div className="page-heading"><span className="eyebrow">Карта направлений</span><h1>Хаб</h1><p>Доступные сценарии и ваш сохранённый прогресс загружаются с сервера.</p></div>
-    {error ? <LoadState error={error} retry={() => { setError(''); setRevision((value) => value + 1) }} /> : !data ? <p>Загружаем направления…</p> : data.directions.length === 0 ? <div className="panel"><p>Пока нет опубликованных направлений.</p></div> :
-      <div className="direction-grid">{data.directions.map((direction) => {
-        const scenarios = data.scenarios.filter((scenario) => scenario.direction_id === direction.id)
-        return <section className="panel direction" key={direction.id}>
-          <h2>{direction.title}</h2><p>{direction.description}</p>
-          {scenarios.length === 0 ? <p className="muted">Сценарии пока недоступны.</p> : <ul className="scenario-list">{scenarios.map((scenario) => {
-            const state = data.progress.find((item) => item.scenario_id === scenario.id)?.state ?? scenario.state
-            return <li key={scenario.id}><span><strong>{scenario.title}</strong><small>{scenario.description}</small></span><span className="scenario-actions"><span className={`status status-${state}`}>{stateLabels[state]}</span>{state !== 'locked' && <a className="play-link" href={`#/game/${scenario.id}`}>{state === 'completed' ? 'Открыть' : 'Играть'}</a>}</span></li>
-          })}</ul>}
-        </section>
-      })}</div>}
+  const knownDirections = useMemo(() => data?.filter((direction) => locationFor(direction.slug)) ?? [], [data])
+  async function completeOnboarding() { onOnboardingComplete(await api.completeOnboarding()) }
+  return <main className="game-shell">
+    {error ? <LoadState error={error} retry={() => { setError(''); setRevision((value) => value + 1) }} /> : !data ? <p className="game-loading">Загружаем кампус…</p> : <GameShell directions={knownDirections} initialBuildingId={initialBuildingId} firstVisit={!user.onboarding_completed} active={active && user.onboarding_completed} />}
+    {!user.onboarding_completed && <NarratorPrologue onComplete={completeOnboarding} />}
   </main>
+}
+
+function GameShell({ directions, initialBuildingId, firstVisit, active }: { directions: Direction[], initialBuildingId: number | 'main' | null, firstVisit: boolean, active: boolean }) {
+  const [building, setBuilding] = useState<Direction | null>(() => initialBuildingId === 'main' ? mainBuilding : directions.find((item) => item.id === initialBuildingId) ?? (firstVisit ? mainBuilding : null))
+  const [dialogue, setDialogue] = useState(false); const [action, setAction] = useState<string | null>(null); const [transition, setTransition] = useState<'idle' | 'closing' | 'loading' | 'opening'>('idle'); const [fullscreen, setFullscreen] = useState(false); const shell = useRef<HTMLDivElement>(null)
+  const actionTrigger = useRef<() => void>(() => {})
+  const actionButton = useRef<HTMLButtonElement>(null)
+  const campusEntry = useRef<CampusEntry | null>(null)
+  const [campusSpawn, setCampusSpawn] = useState<CampusPosition | undefined>()
+  const location = building ? locationFor(building.slug) : undefined
+  const [sceneReady, setSceneReady] = useState(false); const [minimumElapsed, setMinimumElapsed] = useState(false)
+  useEffect(() => {
+    if (transition !== 'loading') return
+    const timer = window.setTimeout(() => setMinimumElapsed(true), 2400)
+    return () => window.clearTimeout(timer)
+  }, [transition])
+  useEffect(() => {
+    if (transition !== 'loading' || !sceneReady || !minimumElapsed) return
+    setTransition('opening')
+  }, [transition, sceneReady, minimumElapsed])
+  useEffect(() => {
+    if (transition !== 'opening') return
+    const timer = window.setTimeout(() => setTransition('idle'), 320)
+    return () => window.clearTimeout(timer)
+  }, [transition])
+  useEffect(() => { const selected = initialBuildingId === 'main' ? mainBuilding : directions.find((item) => item.id === initialBuildingId) ?? null; if (selected) setBuilding(selected) }, [directions, initialBuildingId])
+  useEffect(() => { const sync = () => { setFullscreen(document.fullscreenElement === shell.current); if (!document.fullscreenElement) shell.current?.focus() }; document.addEventListener('fullscreenchange', sync); return () => document.removeEventListener('fullscreenchange', sync) }, [])
+  const changePlace = useCallback((next: Direction | null) => {
+    if (transition !== 'idle') return
+    if (!next && building) setCampusSpawn(returnPosition(building.slug, campusEntry.current))
+    setAction(null); setDialogue(false); setSceneReady(false); setMinimumElapsed(false); setTransition('closing')
+    window.setTimeout(() => { setBuilding(next); if (currentRoute() === 'hub' || currentRoute() === 'building') window.location.hash = next ? `#/building/${next.slug === 'narrator' ? 'main' : next.id}` : '#/hub'; setTransition('loading') }, 280)
+  }, [transition, building])
+  useEffect(() => {
+    let timer: number | undefined
+    const actionElement = actionButton.current
+    const handle = (event: KeyboardEvent) => {
+      if (timer !== undefined || event.repeat || event.code !== 'KeyE' || !active || dialogue || transition !== 'idle' || !actionElement) return
+      event.preventDefault()
+      const button = actionElement
+      button.classList.add('key-pressed')
+      timer = window.setTimeout(() => { timer = undefined; button.classList.remove('key-pressed'); button.click() }, 120)
+    }
+    window.addEventListener('keydown', handle)
+    return () => { window.removeEventListener('keydown', handle); if (timer !== undefined) window.clearTimeout(timer); actionElement?.classList.remove('key-pressed') }
+  }, [active, dialogue, transition, action])
+  async function toggleFullscreen() { if (document.fullscreenElement) await document.exitFullscreen(); else await shell.current?.requestFullscreen() }
+  return <section className="play-area" ref={shell} tabIndex={-1} aria-label="Игровая область">
+    <div className="world-controls"><button type="button" onClick={() => void toggleFullscreen()}>{fullscreen ? 'Свернуть' : 'На весь экран'}</button></div>
+    {building && location ? <GameCanvas onActionReady={(invoke) => { actionTrigger.current = invoke }} onReady={() => setSceneReady(true)} directionSlug={building.slug} blocked={!active || dialogue || transition !== 'idle'} onActionChange={setAction} onInteract={() => setDialogue(true)} onExit={() => changePlace(null)} /> : <CampusCanvas onActionReady={(invoke) => { actionTrigger.current = invoke }} initialPosition={campusSpawn} onReady={() => setSceneReady(true)} directions={directions} blocked={!active || transition !== 'idle'} onActionChange={setAction} onEnter={(direction, position) => { campusEntry.current = { slug: direction.slug, position }; changePlace(direction) }} />}
+    {action && !dialogue && <button ref={actionButton} type="button" className="action-prompt" onClick={() => actionTrigger.current()}><kbd>E</kbd><span>{action}</span></button>}
+    {dialogue && location && <Dialogue location={location} onClose={() => { setDialogue(false); shell.current?.focus() }} /> }
+    <div className={`iris-transition iris-${transition}`} aria-hidden="true" />
+    {transition === 'loading' && <div className="loading-card" role="status">Новая локация готовится… <small>Совет: хороший лог часто честнее воспоминаний о том, «как всё работало вчера».</small><img className="loading-spinner" src="/content/loading-spinner.svg" alt="" /></div>}
+  </section>
+}
+
+export function Dialogue({ location, onClose }: { location: WorldLocation, onClose: () => void }) {
+  const [choice, setChoice] = useState<number | null>(null)
+  const panelRef = useRef<HTMLDivElement>(null)
+  const timerRef = useRef<number | undefined>(undefined)
+  const [pressed, setPressed] = useState<string | null>(null)
+  const [speaker, setSpeaker] = useState<'npc' | 'player'>('npc')
+  const selected = choice === null ? undefined : location.choices[choice]
+  const playerSpeaking = speaker === 'player' && selected !== undefined
+  const name = playerSpeaking ? 'Стажёр Ноль' : location.name
+  const text = playerSpeaking ? selected.text : selected?.reaction ?? location.greeting
+  const portrait = playerSpeaking ? '/content/characters/player/player_robot_front.png' : selected ? `/content/characters/npcs/emotions/${location.slug}/${selected.emotion}.png` : location.portrait
+
+  useEffect(() => {
+    const handle = (event: KeyboardEvent) => {
+      if (event.repeat || timerRef.current !== undefined) return
+      const key = event.key === 'Escape' ? 'Escape' : /^[0-9]$/.test(event.key) ? event.key : null
+      if (!key) return
+      const button = panelRef.current?.querySelector<HTMLButtonElement>(`button[data-shortcut="${key}"]`)
+      if (!button) return
+      event.preventDefault()
+      setPressed(key)
+      timerRef.current = window.setTimeout(() => { timerRef.current = undefined; setPressed(null); button.click() }, 120)
+    }
+    window.addEventListener('keydown', handle)
+    return () => { window.removeEventListener('keydown', handle); if (timerRef.current !== undefined) { window.clearTimeout(timerRef.current); timerRef.current = undefined } }
+  }, [])
+
+  return <div className="dialogue-interface" role="dialog" aria-modal="true" aria-label={`Разговор: ${location.name}`}>
+    <div ref={panelRef} className="dialogue-choices" aria-label="Действия в диалоге">
+      {choice === null ? location.choices.map((item, index) => <button key={item.text} data-shortcut={String((index + 1) % 10)} className={pressed === String((index + 1) % 10) ? 'key-pressed' : undefined} type="button" onClick={() => { setChoice(index); setSpeaker('player') }}><kbd aria-hidden="true">{(index + 1) % 10}</kbd><span>{item.text}</span></button>) : playerSpeaking ? <button data-shortcut="1" className={pressed === '1' ? 'key-pressed' : undefined} type="button" onClick={() => setSpeaker('npc')}><kbd aria-hidden="true">1</kbd><span>Продолжить</span></button> : <button data-shortcut="1" className={pressed === '1' ? 'key-pressed' : undefined} type="button" onClick={() => setChoice(null)}><kbd aria-hidden="true">1</kbd><span>Выбрать другую тему</span></button>}
+      <button data-shortcut="Escape" className={`dialogue-end${pressed === 'Escape' ? ' key-pressed' : ''}`} type="button" onClick={onClose}><kbd aria-hidden="true">Esc</kbd><span>Завершить разговор</span></button>
+    </div>
+    <div className={`dialogue-overlay${playerSpeaking ? ' player-line' : ''}`}>
+      {!playerSpeaking && <img src={portrait} alt={`Портрет ${name}`} />}
+      <div className="dialogue-copy"><strong>{name}</strong><p>{text}</p></div>
+      {playerSpeaking && <img src={portrait} alt={`Портрет ${name}`} />}
+    </div>
+  </div>
+}
+
+function HelpScreen() { return <main className="content"><section className="panel"><h1>Помощь</h1><p>Это прогулка по IT-кампусу: разговаривайте с мастерами и выбирайте темы без правильных ответов или оценок.</p><ul className="event-list"><li><strong>WASD / стрелки</strong><p>Движение по доступным дорожкам.</p></li><li><strong>E</strong><p>Войти в корпус, поговорить с мастером или выйти в хаб.</p></li><li><strong>Fullscreen</strong><p>Кнопка «На весь экран» разворачивает игровое окно; выход — Esc.</p></li></ul></section></main> }
+
+function NarratorPrologue({ onComplete }: { onComplete: () => Promise<void> }) {
+  const [busy, setBusy] = useState(false); const [error, setError] = useState('')
+  async function finish() { setBusy(true); setError(''); try { await onComplete() } catch (cause) { setError(errorMessage(cause)); setBusy(false) } }
+  return <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label="Пролог Дяди Дебага"><section className="panel narrator-prologue"><img src="/content/characters/npcs/npc_narrator_portrait.png" alt="Дядя Дебаг" /><div><span className="eyebrow">Дядя Дебаг</span><h2>Добро пожаловать в кампус</h2><p>Здесь можно пробовать разные IT-направления без единственно правильного маршрута. Подходите к корпусам, говорите с мастерами и выбирайте сценарии.</p>{error && <p className="error" role="alert">{error}</p>}<div className="admin-actions"><button className="primary" type="button" disabled={busy} onClick={finish}>Продолжить</button><button type="button" disabled={busy} onClick={finish}>Пропустить</button></div></div></section></div>
+}
+
+export function BuildingScreen({ api, directionId }: { api: ApiClient, directionId: number }) {
+  const [data, setData] = useState<{ direction: Direction, scenarios: Scenario[], progress: Progress[] } | null>(null)
+  const [dialogue, setDialogue] = useState(false); const [error, setError] = useState('')
+  useEffect(() => { let active = true; Promise.all([api.directions(), api.scenarios(), api.progress()]).then(([directions, scenarios, progress]) => { const direction = directions.find((item) => item.id === directionId); if (!direction) throw new Error('Направление не найдено.'); if (active) setData({ direction, scenarios, progress }) }).catch((cause) => { if (active) setError(errorMessage(cause)) }); return () => { active = false } }, [api, directionId])
+  if (error) return <main className="content"><LoadState error={error} retry={() => window.location.hash = '#/hub'} /></main>
+  if (!data) return <main className="content"><p>Открываем корпус…</p></main>
+  const location = locationFor(data.direction.slug)
+  return <main className="content game-page"><GameCanvas directionSlug={data.direction.slug} onInteract={() => setDialogue(true)} onExit={() => { window.location.hash = '#/hub' }} /><section className="panel game-instructions"><button type="button" onClick={() => setDialogue(true)}>Поговорить с мастером</button></section>{dialogue && <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label={`Мастер ${data.direction.title}`}><section className="panel direction-dialogue"><img src={location?.portrait} alt="Портрет мастера" /><div><span className="eyebrow">Мастер {data.direction.title}</span><p>{location?.greeting}</p><button type="button" onClick={() => setDialogue(false)}>Закрыть</button></div></section></div>}</main>
 }
 
 export function GameScreen({ api, scenarioId, Game = GameCanvas }: { api: ApiClient, scenarioId: number, Game?: typeof GameCanvas }) {
@@ -152,14 +259,16 @@ export function GameScreen({ api, scenarioId, Game = GameCanvas }: { api: ApiCli
   const [error, setError] = useState('')
   const [feedback, setFeedback] = useState<AttemptResult | null>(null)
   const [revision, setRevision] = useState(0)
+  const [directionSlug, setDirectionSlug] = useState<string | undefined>()
 
   useEffect(() => {
     let active = true
     setScenario(null); setError(''); setFeedback(null)
-    api.scenario(scenarioId).then(async (detail) => {
+    Promise.all([api.scenario(scenarioId), api.directions()]).then(async ([detail, directions]) => {
       if (detail.state === 'available') await api.startScenario(scenarioId)
       if (active) {
         setScenario(detail)
+        setDirectionSlug(directions.find((direction) => direction.id === detail.direction_id)?.slug)
         setCompletedTaskIds(new Set(detail.completed_task_ids))
       }
     }).catch((cause) => { if (active) setError(errorMessage(cause)) })
@@ -181,7 +290,7 @@ export function GameScreen({ api, scenarioId, Game = GameCanvas }: { api: ApiCli
   if (!scenario) return <main className="content"><p>Загружаем игровую локацию…</p></main>
   return <main className="content game-page">
     <div className="page-heading"><span className="eyebrow">Игровая локация</span><h1>{scenario.title}</h1><p>{scenario.description}</p><a href="#/hub">Вернуться в хаб</a></div>
-    <Game scenarioTitle={scenario.title} onInteract={openTask} />
+    <Game directionSlug={directionSlug ?? 'backend'} onInteract={openTask} onExit={() => { window.location.hash = '#/hub' }} />
     <section className="panel game-instructions"><h2>Как пройти задание</h2><p>Подойдите к NPC и нажмите <kbd>E</kbd>. Вопрос откроется в обычном React-интерфейсе, а результат сохранится на сервере.</p>{scenario.tasks.some((item) => item.kind === 'choice' && !completedTaskIds.has(item.id)) ? <button type="button" onClick={openTask}>Открыть задание</button> : <p className="success">Все задания этой локации завершены.</p>}</section>
     {feedback && <section className="panel world-feedback" role="status"><h2>{feedback.is_correct ? 'NPC доволен решением' : 'NPC просит проверить ответ'}</h2><p>{feedback.explanation}</p><p className="muted">Сохранённый статус сценария: {stateLabels[feedback.scenario_state]}.</p></section>}
     {task && <TaskModal api={api} task={task} onResult={handleResult} onClose={() => setTask(null)} />}

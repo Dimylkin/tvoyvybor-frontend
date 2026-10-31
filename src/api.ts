@@ -2,6 +2,7 @@ export interface User {
   id: number
   email: string
   role: 'user' | 'admin'
+  onboarding_completed: boolean
 }
 
 export interface Direction {
@@ -146,7 +147,7 @@ export class ApiClient {
     baseUrl: string,
     getToken: () => string | null,
     onUnauthorized: () => void,
-    fetchImpl: typeof fetch = fetch,
+    fetchImpl: typeof fetch = fetch.bind(globalThis),
   ) {
     this.baseUrl = baseUrl
     this.getToken = getToken
@@ -203,6 +204,7 @@ export class ApiClient {
   }
 
   me(): Promise<User> { return this.request('/auth/me') }
+  completeOnboarding(): Promise<User> { return this.request('/auth/me/onboarding-complete', { method: 'PUT' }) }
   directions(): Promise<Direction[]> { return this.request('/directions') }
   scenarios(): Promise<Scenario[]> { return this.request('/scenarios') }
   scenario(id: number): Promise<ScenarioDetail> { return this.request(`/scenarios/${id}`) }
