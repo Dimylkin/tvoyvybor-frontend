@@ -144,7 +144,8 @@ function GameShell({ api, user, logout, directions, initialBuildingId, firstVisi
   const [interaction, setInteraction] = useState<'npc' | 'server' | 'terminal' | null>(null)
   const [quests, setQuests] = useState<Quest[]>([])
   const [questError, setQuestError] = useState('')
-  const reloadQuests = useCallback(async () => { try { setQuests(await api.quests()); setQuestError('') } catch (e) { setQuestError(errorMessage(e)); throw e } }, [api])
+  const [questsLoading, setQuestsLoading] = useState(true)
+  const reloadQuests = useCallback(async () => { setQuestsLoading(true); try { setQuests(await api.quests()); setQuestError('') } catch (e) { setQuestError(errorMessage(e)); throw e } finally { setQuestsLoading(false) } }, [api])
   useEffect(() => { void reloadQuests().catch(() => {}) }, [reloadQuests])
   const [building, setBuilding] = useState<Direction | null>(() => initialBuildingId === 'main' ? mainBuilding : directions.find((item) => item.id === initialBuildingId) ?? (firstVisit ? mainBuilding : null))
   const [dialogue, setDialogue] = useState(false); const [action, setAction] = useState<string | null>(null); const [transition, setTransition] = useState<'idle' | 'closing' | 'loading' | 'opening'>('idle'); const [fullscreen, setFullscreen] = useState(false); const shell = useRef<HTMLDivElement>(null)
@@ -197,7 +198,7 @@ function GameShell({ api, user, logout, directions, initialBuildingId, firstVisi
     {action && !dialogue && <button ref={actionButton} type="button" className="action-prompt" onClick={() => actionTrigger.current()}><kbd>E</kbd><span>{action}</span></button>}
     {questError && <div role="alert" className="quest-error">{questError} <button type="button" onClick={() => void reloadQuests().catch(() => {})}>Повторить</button></div>}
     {quests.find((q) => q.tracked) && <div className="quest-tracker">★ {quests.find((q) => q.tracked)?.title}: {quests.find((q) => q.tracked)?.objectives.find((o) => !o.completed)?.title}</div>}
-    {phone && <CampusPhone api={api} user={user} quests={quests} reload={reloadQuests} close={() => { setPhone(false); shell.current?.focus() }} logout={logout} profile={<ProfileScreen api={api} />} results={<ResultsScreen api={api} />} />}
+    {phone && <CampusPhone api={api} user={user} quests={quests} loading={questsLoading} loadError={questError} reload={reloadQuests} close={() => { setPhone(false); shell.current?.focus() }} logout={logout} profile={<ProfileScreen api={api} />} results={<ResultsScreen api={api} />} />}
     {interaction && <QuestInteraction api={api} quest={quests.find((q) => q.slug === 'server-on-vacation')} target={interaction} reload={reloadQuests} close={() => setInteraction(null)} dialogue={() => { setInteraction(null); setDialogue(true) }} />}
     {dialogue && location && <Dialogue location={location} onClose={() => { setDialogue(false); shell.current?.focus() }} /> }
     <div className={`iris-transition iris-${transition}`} aria-hidden="true" />
