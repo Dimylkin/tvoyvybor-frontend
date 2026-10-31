@@ -3,9 +3,13 @@ import { useEffect, useRef } from 'react'
 import { locationFor } from './world'
 import { cameraPosition } from './campusCamera'
 
-interface GameCanvasProps { directionSlug: string, onInteract: () => void, onExit: () => void, onActionChange?: (label: string | null) => void, blocked?: boolean, onReady?: () => void, onActionReady?: (action: () => void) => void }
+interface GameCanvasProps { directionSlug: string, onInteract: () => void, onExit: () => void, onActionChange?: (label: string | null) => void, blocked?: boolean, onReady?: () => void, onActionReady?: (action: () => void) => void, onObject?: (object: 'server' | 'terminal') => void, questMarker?: boolean }
 
-export function GameCanvas({ directionSlug, onInteract, onExit, onActionChange = () => {}, blocked = false, onReady = () => {}, onActionReady }: GameCanvasProps) {
+export function GameCanvas({ directionSlug, onInteract, onExit, onActionChange = () => {}, blocked = false, onReady = () => {}, onActionReady, onObject, questMarker = false }: GameCanvasProps) {
+  const markerRef = useRef(questMarker)
+  useEffect(() => { markerRef.current = questMarker }, [questMarker])
+  const objectRef = useRef(onObject)
+  useEffect(() => { objectRef.current = onObject }, [onObject])
   const host = useRef<HTMLDivElement>(null)
   const onInteractRef = useRef(onInteract)
   const onExitRef = useRef(onExit)
@@ -37,8 +41,9 @@ export function GameCanvas({ directionSlug, onInteract, onExit, onActionChange =
       class SliceScene extends Phaser.Scene {
         private player!: Phaser.GameObjects.Image
         private npc!: Phaser.GameObjects.Image
+        private questMarker?: Phaser.GameObjects.Text
         private cursors?: Phaser.Types.Input.Keyboard.CursorKeys
-        private action: 'npc' | 'exit' | undefined
+        private action: 'npc' | 'exit' | 'server' | 'terminal' | undefined
         private facing = 'front'
         private target?: Point
         private cameraCenter = cameraPosition({ x: 400, y: 250 }, { x: 400, y: 390 }, Infinity, world, interiorZoom)
@@ -58,14 +63,20 @@ export function GameCanvas({ directionSlug, onInteract, onExit, onActionChange =
           this.npc = this.add.image(location.npc.x, location.npc.y, 'npc').setOrigin(.5, 1)
           this.player.setScale(location.scale.max * .6).setDepth(this.player.y)
           this.npc.setScale(location.scale.max * .6).setDepth(this.npc.y)
+          this.questMarker = this.add.text(location.npc.x, location.npc.y - 125, '!', { fontSize: '26px', fontStyle: 'bold', color: '#ffe46a', stroke: '#172238', strokeThickness: 4 }).setOrigin(.5).setDepth(999)
+          if (directionSlug === 'backend') {
+            this.add.text(520, 265, 'СЕРВЕР', { fontSize: '14px', color: '#fff', backgroundColor: '#174355', padding: { x: 6, y: 4 } }).setOrigin(.5)
+            this.add.text(650, 310, 'ТЕРМИНАЛ', { fontSize: '14px', color: '#fff', backgroundColor: '#174355', padding: { x: 6, y: 4 } }).setOrigin(.5)
+          }
           this.cursors = this.input.keyboard?.createCursorKeys()
-          const interact = () => { if (blockedRef.current) return; if (this.action) this.target = undefined; if (this.action === 'npc') onInteractRef.current(); if (this.action === 'exit') onExitRef.current() }
+          const interact = () => { if (blockedRef.current) return; if (this.action) this.target = undefined; if (this.action === 'npc') onInteractRef.current(); if (this.action === 'exit') onExitRef.current(); if (this.action === 'server' || this.action === 'terminal') objectRef.current?.(this.action) }
           actionReadyRef.current?.(interact)
           this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => { if (!blockedRef.current) { const point = this.cameras.main.getWorldPoint(pointer.x, pointer.y); this.target = { x: Phaser.Math.Clamp(point.x, 0, world.width), y: Phaser.Math.Clamp(point.y, 0, world.height) } } })
           readyRef.current()
         }
 
         update(_time: number, delta: number) {
+          this.questMarker?.setVisible(markerRef.current)
           const keyboard = this.input.keyboard
           if (!keyboard || !this.cursors || !location) return
           if (blockedRef.current) { this.cameraCenter = cameraPosition(this.cameraCenter, this.player, delta, world, interiorZoom); this.cameras.main.centerOn(this.cameraCenter.x, this.cameraCenter.y); return }
@@ -84,10 +95,12 @@ export function GameCanvas({ directionSlug, onInteract, onExit, onActionChange =
           this.npc.setDepth(this.npc.y)
           const nearNpc = Phaser.Math.Distance.Between(this.player.x, this.player.y, this.npc.x, this.npc.y) < 50
           const nearExit = Phaser.Math.Distance.Between(this.player.x, this.player.y, location.exit.x, location.exit.y) < 35
-          this.action = nearNpc ? 'npc' : nearExit ? 'exit' : undefined
+          const nearServer = directionSlug === 'backend' && Phaser.Math.Distance.Between(this.player.x, this.player.y, 520, 265) < 45
+          const nearTerminal = directionSlug === 'backend' && Phaser.Math.Distance.Between(this.player.x, this.player.y, 650, 310) < 45
+          this.action = nearNpc ? 'npc' : nearServer ? 'server' : nearTerminal ? 'terminal' : nearExit ? 'exit' : undefined
           this.cameraCenter = cameraPosition(this.cameraCenter, this.player, delta, world, interiorZoom)
           this.cameras.main.centerOn(this.cameraCenter.x, this.cameraCenter.y)
-          actionRef.current(nearNpc ? (location.slug === 'narrator' ? 'Поговорить с Дядей Дебагом' : `Поговорить с мастером ${location.label}`) : nearExit ? 'Выйти в главный хаб' : null)
+          actionRef.current(nearServer ? 'Осмотреть сервер' : nearTerminal ? 'Открыть терминал' : nearNpc ? (location.slug === 'narrator' ? 'Поговорить с Дядей Дебагом' : `Поговорить с мастером ${location.label}`) : nearExit ? 'Выйти в главный хаб' : null)
         }
       }
 

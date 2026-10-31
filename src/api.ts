@@ -1,3 +1,34 @@
+export interface QuestObjective {
+  id: number
+  title: string
+  description: string
+  objective_type: string
+  required_count: number
+  current_count: number
+  completed: boolean
+  is_required: boolean
+}
+
+export interface Quest {
+  id: number
+  slug: string
+  title: string
+  description: string
+  category: string
+  location_slug: string
+  giver_npc_id: string
+  status: 'locked' | 'available' | 'active' | 'abandoned' | 'completed'
+  accepted_at: string | null
+  completed_at: string | null
+  tracked: boolean
+  objectives: QuestObjective[]
+}
+
+export interface InteractionResult {
+  accepted: boolean
+  changes: { quest_id: number, objective_id: number, objective_completed: boolean, quest_completed: boolean }[]
+}
+
 export interface User {
   id: number
   email: string
@@ -21,32 +52,6 @@ export interface Scenario {
   title: string
   description: string
   state: ScenarioState
-}
-
-export interface Progress {
-  scenario_id: number
-  state: ScenarioState
-}
-
-export interface Task {
-  id: number
-  kind: string
-  title: string
-  content: Record<string, unknown>
-}
-
-export interface ScenarioDetail extends Scenario {
-  tasks: Task[]
-  completed_task_ids: number[]
-}
-
-export interface AttemptResult {
-  id: number
-  task_id: number
-  is_correct: boolean
-  reaction: 'retry' | 'completed'
-  explanation: string
-  scenario_state: ScenarioState
 }
 
 export interface InterestProfile {
@@ -203,16 +208,18 @@ export class ApiClient {
     return this.request('/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) }, false)
   }
 
+  quests(): Promise<Quest[]> { return this.request('/quests') }
+  offerQuest(id: number, npcId: string): Promise<Quest> { return this.request(`/quests/${id}/offer`, { method: 'POST', body: JSON.stringify({ npc_id: npcId }) }) }
+  acceptQuest(id: number): Promise<Quest> { return this.request(`/quests/${id}/accept`, { method: 'POST' }) }
+  abandonQuest(id: number): Promise<Quest> { return this.request(`/quests/${id}/abandon`, { method: 'POST' }) }
+  trackQuest(id: number | null): Promise<{ quest_id: number | null }> { return this.request('/quests/tracked', { method: 'PUT', body: JSON.stringify({ quest_id: id }) }) }
+  terminal(requestId: string): Promise<{ log: string, port: number }> { return this.request('/game/backend-terminal', { method: 'POST', body: JSON.stringify({ request_id: requestId }) }) }
+  interact(requestId: string, eventType: string, targetKey: string, payload: Record<string, unknown> = {}): Promise<InteractionResult> { return this.request('/game/interactions', { method: 'POST', body: JSON.stringify({ request_id: requestId, event_type: eventType, target_key: targetKey, payload }) }) }
+
   me(): Promise<User> { return this.request('/auth/me') }
   completeOnboarding(): Promise<User> { return this.request('/auth/me/onboarding-complete', { method: 'PUT' }) }
   directions(): Promise<Direction[]> { return this.request('/directions') }
   scenarios(): Promise<Scenario[]> { return this.request('/scenarios') }
-  scenario(id: number): Promise<ScenarioDetail> { return this.request(`/scenarios/${id}`) }
-  startScenario(id: number): Promise<Progress> { return this.request(`/scenarios/${id}/start`, { method: 'PUT' }) }
-  submitAttempt(taskId: number, requestId: string, answer: string): Promise<AttemptResult> {
-    return this.request(`/tasks/${taskId}/attempts`, { method: 'POST', body: JSON.stringify({ request_id: requestId, answer }) })
-  }
-  progress(): Promise<Progress[]> { return this.request('/progress') }
   interestProfile(): Promise<InterestProfile> { return this.request('/interest-profile') }
   interestEvents(): Promise<InterestEvent[]> { return this.request('/interest-events') }
   recommendation(): Promise<Recommendation | null> { return this.request('/recommendation') }
