@@ -11,6 +11,21 @@ import './task-ui.css'
 
 export interface GameProps { userId?: number, quest: Quest, send: (action: string, payload?: Record<string, unknown>) => Promise<void>, busy: boolean }
 
+const pendingQuestRequestIds = new Map<string, string>()
+
+function storedRequestId(key: string): string | null {
+  try { return sessionStorage.getItem(key) } catch { return null }
+}
+
+function storeRequestId(key: string, requestId: string) {
+  try { sessionStorage.setItem(key, requestId) } catch { /* keep the retry id in memory */ }
+}
+
+function clearRequestId(key: string) {
+  pendingQuestRequestIds.delete(key)
+  try { sessionStorage.removeItem(key) } catch { /* storage may be disabled */ }
+}
+
 function useQuestAction(api: ApiClient, quest: Quest | undefined, reload: () => Promise<void>, onAwards: (awards: Achievement[]) => void, userId: number) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -19,12 +34,13 @@ function useQuestAction(api: ApiClient, quest: Quest | undefined, reload: () => 
     if (!quest || lock.current) return
     lock.current = true; setBusy(true); setError('')
     const key = `minigame:${userId}:${quest.id}:${quest.accepted_at ?? "new"}:${JSON.stringify([action, payload])}`
-    const requestId = sessionStorage.getItem(key) ?? crypto.randomUUID()
-    sessionStorage.setItem(key, requestId)
     try {
+      const requestId = pendingQuestRequestIds.get(key) ?? storedRequestId(key) ?? crypto.randomUUID()
+      pendingQuestRequestIds.set(key, requestId)
+      storeRequestId(key, requestId)
       const result: GameActionResult = await api.questAction(quest.id, requestId, action, payload)
       await reload()
-      sessionStorage.removeItem(key)
+      clearRequestId(key)
       onAwards(result.awards)
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Не удалось сохранить действие. Повторите его.')
