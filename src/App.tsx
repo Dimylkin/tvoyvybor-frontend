@@ -105,7 +105,7 @@ function AuthScreen({ register, onSubmit }: { register: boolean, onSubmit: (emai
   async function submit(event: React.SubmitEvent<HTMLFormElement>) {
     event.preventDefault(); setError(''); setBusy(true)
     try { await onSubmit(email, password, register) }
-    catch (cause) { setError(errorMessage(cause)) }
+    catch (cause) { setError(cause instanceof ApiError && cause.status === 401 ? 'Неверный адрес электронной почты или пароль.' : errorMessage(cause)) }
     finally { setBusy(false) }
   }
   return <main className="auth-layout">

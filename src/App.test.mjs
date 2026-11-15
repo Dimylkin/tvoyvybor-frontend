@@ -13,8 +13,17 @@ globalThis.sessionStorage = dom.window.sessionStorage
 globalThis.HTMLElement = dom.window.HTMLElement
 globalThis.MutationObserver = dom.window.MutationObserver
 globalThis.IS_REACT_ACT_ENVIRONMENT = true
+globalThis.__testCanvasReadyEnabled = true
+globalThis.__testCanvasReadyCallbacks = new Set()
 
 const { render, screen, fireEvent, waitFor, cleanup, act } = await import('@testing-library/react')
+function setCanvasReadySignal(enabled) {
+  globalThis.__testCanvasReadyEnabled = enabled
+  if (enabled) {
+    for (const notifyReady of globalThis.__testCanvasReadyCallbacks) notifyReady()
+    globalThis.__testCanvasReadyCallbacks.clear()
+  }
+}
 const canvasTestDouble = decodeURIComponent(new URL('./testCanvasMocks.tsx', import.meta.url).pathname)
 const vite = await createServer({
   plugins: [{
@@ -36,16 +45,21 @@ const user = { id: 1, email: 'player@example.com', role: 'user', onboarding_comp
 const direction = { id: 3, slug: 'backend', title: 'Backend', description: 'Серверная разработка' }
 const scenario = { id: 7, direction_id: 3, slug: 'first', title: 'Первый сценарий', description: 'Проверка сервера', state: 'active' }
 
-function mockApi({ login = false, me = user, meStatus = 200, directions = [direction], scenarios = [scenario], progress = [{ scenario_id: 7, state: 'completed' }] } = {}) {
+function mockApi({ login = false, loginError = null, register = false, me = user, meStatus = 200, directions = [direction], scenarios = [scenario], progress = [{ scenario_id: 7, state: 'completed' }] } = {}) {
   const requests = []
   globalThis.fetch = async (input, init) => {
     const path = new URL(String(input), 'http://localhost:5173').pathname
     const authorization = new Headers(init?.headers).get('Authorization')
-    requests.push({ path, authorization })
-    if (path === '/api/auth/login' && login) return Response.json({ access_token: 'test-token', token_type: 'bearer' })
+    requests.push({ path, authorization, method: init?.method })
+    if (path === '/api/auth/register' && register) return Response.json(me)
+    if (path === '/api/auth/login') {
+      if (login) return Response.json({ access_token: 'test-token', token_type: 'bearer' })
+      if (loginError) return Response.json({ detail: loginError }, { status: 401 })
+    }
     if (path === '/api/auth/me') return meStatus === 401 ? Response.json({ detail: 'Invalid authentication credentials' }, { status: 401 }) : Response.json(me)
     if (path === '/api/quests') return Response.json([])
     if (path === '/api/game/state') return Response.json({ intro_completed: me.intro_completed ?? true, final_quest_unlocked: false, final_quest_completed: me.main_story_completed ?? false, main_story_completed: me.main_story_completed ?? false })
+    if (path === '/api/game/intro-complete') return Response.json({ intro_completed: true, final_quest_unlocked: false, final_quest_completed: false, main_story_completed: false })
     if (path === '/api/directions') return Response.json(directions)
     if (path === '/api/scenarios') return Response.json(scenarios)
     if (path === '/api/progress') return Response.json(progress)
@@ -56,6 +70,7 @@ function mockApi({ login = false, me = user, meStatus = 200, directions = [direc
 
 afterEach(() => {
   cleanup()
+  setCanvasReadySignal(true)
   globalThis.sessionStorage = window.sessionStorage
   localStorage.clear()
   window.location.hash = ''
@@ -76,6 +91,42 @@ test('login opens the compact campus game shell without loading scenarios', asyn
   assert.equal(localStorage.getItem('tvoyvybor.accessToken'), 'test-token')
   assert.ok(requests.some((request) => request.path === '/api/directions' && request.authorization === 'Bearer test-token'))
   assert.ok(!requests.some((request) => request.path === '/api/progress'))
+})
+
+test('registering a new player on /register opens the prologue in the campus hub', async () => {
+  window.location.hash = '/register'
+  const requests = mockApi({ login: true, register: true, me: { ...user, onboarding_completed: false, intro_completed: false }, directions: [] })
+  setCanvasReadySignal(false)
+  render(React.createElement(App))
+  fireEvent.change(screen.getByLabelText('Электронная почта'), { target: { value: 'new-player@example.com' } })
+  fireEvent.change(screen.getByLabelText('Пароль'), { target: { value: 'password123' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Зарегистрироваться' }))
+
+  assert.ok(await screen.findByLabelText('Игровая сцена'))
+  assert.equal(screen.queryByRole('dialog', { name: 'Разговор: Дядя Дебаг' }), null)
+  act(() => setCanvasReadySignal(true))
+  assert.ok(await screen.findByRole('dialog', { name: 'Разговор: Дядя Дебаг' }))
+  for (let step = 0; step < 5; step++) {
+    const choice = screen.getByRole('dialog').querySelector('button')
+    assert.ok(choice)
+    fireEvent.click(choice)
+    fireEvent.keyDown(window, { code: 'Space', key: ' ' })
+  }
+  await waitFor(() => assert.ok(!screen.queryByRole('dialog', { name: 'Разговор: Дядя Дебаг' })))
+  assert.ok(requests.some((request) => request.path === '/api/game/intro-complete' && request.method === 'PUT'))
+  fireEvent.click(screen.getByRole('button', { name: 'Телефон · Tab' }))
+  assert.ok(screen.getByRole('dialog', { name: 'CampusOS' }))
+})
+
+test('invalid login credentials show an authentication error instead of an expired-session message', async () => {
+  mockApi({ loginError: 'Invalid credentials' })
+  render(React.createElement(App))
+  fireEvent.change(screen.getByLabelText('Электронная почта'), { target: { value: 'player@example.com' } })
+  fireEvent.change(screen.getByLabelText('Пароль'), { target: { value: 'wrong-password' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Войти' }))
+
+  const alert = await screen.findByRole('alert')
+  assert.equal(alert.textContent, 'Неверный адрес электронной почты или пароль.')
 })
 
 test('saved token restores the session and server status after remount', async () => {
@@ -109,6 +160,9 @@ test('a new player starts in the main building and remains there after the prolo
   await waitFor(() => assert.ok(!screen.queryByRole('dialog', { name: 'Разговор: Дядя Дебаг' })))
   assert.ok(screen.getByLabelText('Игровая сцена'))
   assert.equal(screen.queryByLabelText('Игровой кампус'), null)
+  act(() => setCanvasReadySignal(true))
+  fireEvent.click(screen.getByRole('button', { name: 'Телефон · Tab' }))
+  assert.ok(screen.getByRole('dialog', { name: 'CampusOS' }))
 })
 
 test('the main building route restores its interior for an existing player', async () => {
