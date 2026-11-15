@@ -1,12 +1,15 @@
+import { playerAppearance } from './playerAppearance'
 import { useEffect, useRef } from 'react'
 import { moveToward, type Point } from './clickMovement'
 import type { Direction } from './api'
-import { CAMERA, CAMPUS, cameraPosition } from './campusCamera'
+import { CAMERA, CAMPUS, CAMPUS_TILES, cameraPosition } from './campusCamera'
 import type { CampusPosition } from './campusReturn'
 import { devOpsSpot, locationFor, mainBuilding } from './world'
 
-export function CampusCanvas({ directions, onEnter, initialPosition, onActionReady, onActionChange = () => {}, blocked = false, onReady = () => {} }: { directions: Direction[], onEnter: (direction: Direction, position: CampusPosition) => void, initialPosition?: CampusPosition, onActionReady?: (action: () => void) => void, onActionChange?: (label: string | null) => void, blocked?: boolean, onReady?: () => void }) {
+export function CampusCanvas({ directions, onEnter, initialPosition, onActionReady, onActionChange = () => {}, blocked = false, onReady = () => {}, onPositionChange }: { directions: Direction[], onEnter: (direction: Direction, position: CampusPosition) => void, initialPosition?: CampusPosition, onActionReady?: (action: () => void) => void, onActionChange?: (label: string | null) => void, blocked?: boolean, onReady?: () => void, onPositionChange?: (position: CampusPosition) => void }) {
   const host = useRef<HTMLDivElement>(null); const enterRef = useRef(onEnter); const actionRef = useRef(onActionChange); const blockedRef = useRef(blocked); const readyRef = useRef(onReady); const actionReadyRef = useRef(onActionReady)
+  const positionRef = useRef(onPositionChange)
+  useEffect(() => { positionRef.current = onPositionChange }, [onPositionChange])
   useEffect(() => { enterRef.current = onEnter }, [onEnter]); useEffect(() => { actionRef.current = onActionChange }, [onActionChange]); useEffect(() => { blockedRef.current = blocked }, [blocked]); useEffect(() => { readyRef.current = onReady }, [onReady]); useEffect(() => { actionReadyRef.current = onActionReady }, [onActionReady])
   useEffect(() => {
     if (typeof Element === 'undefined') return
@@ -21,9 +24,9 @@ export function CampusCanvas({ directions, onEnter, initialPosition, onActionRea
         private target?: Point
         private cameraCenter = cameraPosition({ x: 400, y: 314 }, spawn, Infinity)
         constructor() { super('campus') }
-        preload() { for (const tile of ['top_left', 'top_right', 'bottom_left', 'bottom_right']) this.load.image(`campus-${tile}`, `/content/backgrounds/campus_main_${tile}.png`); for (const face of ['front', 'back', 'left', 'right']) this.load.image(`player-${face}`, `/content/characters/player/player_robot_${face}.png`) }
+        preload() { for (const tile of CAMPUS_TILES) this.load.image(`campus-${tile}`, `/content/backgrounds/campus_main_${tile}.png`); for (const [face, image] of Object.entries(playerAppearance)) this.load.image(`player-${face}`, image) }
         create() {
-          for (const [index, tile] of ['top_left', 'top_right', 'bottom_left', 'bottom_right'].entries()) {
+          for (const [index, tile] of CAMPUS_TILES.entries()) {
             this.add.image((index % 2) * CAMPUS.width / 2, Math.floor(index / 2) * CAMPUS.height / 2, `campus-${tile}`).setOrigin(0).setDisplaySize(CAMPUS.width / 2, CAMPUS.height / 2)
           }
           this.add.text(devOpsSpot.x, devOpsSpot.y, devOpsSpot.label, { align: 'center', fontFamily: 'system-ui', fontSize: '12px', color: '#d5dce9', stroke: '#172238', strokeThickness: 4 }).setOrigin(.5)
@@ -33,6 +36,7 @@ export function CampusCanvas({ directions, onEnter, initialPosition, onActionRea
           const interact = () => { if (this.current && !blockedRef.current) { this.target = undefined; enterRef.current(this.current.direction, { x: this.player.x, y: this.player.y }) } }
           actionReadyRef.current?.(interact)
           this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => { if (!blockedRef.current) { const point = this.cameras.main.getWorldPoint(pointer.x, pointer.y); this.target = { x: Phaser.Math.Clamp(point.x, 38 / 3, CAMPUS.width - 38 / 3), y: Phaser.Math.Clamp(point.y, 32, CAMPUS.height) } } })
+          positionRef.current?.({ x: spawn.x, y: spawn.y })
           readyRef.current()
         }
         update(_time: number, delta: number) {
@@ -47,6 +51,7 @@ export function CampusCanvas({ directions, onEnter, initialPosition, onActionRea
             else if (this.target) { const point = moveToward(this.player, this.target, speed); const dx = point.x - x, dy = point.y - y; x = point.x; y = point.y; if (dx || dy) facing = Math.abs(dx) > Math.abs(dy) ? (dx < 0 ? 'left' : 'right') : (dy < 0 ? 'back' : 'front'); if (x === this.target.x && y === this.target.y) this.target = undefined }
             this.player.setPosition(Phaser.Math.Clamp(x, 38 / 3, CAMPUS.width - 38 / 3), Phaser.Math.Clamp(y, 32, CAMPUS.height))
             if (facing !== this.facing) { this.facing = facing; this.player.setTexture(`player-${facing}`) }
+            positionRef.current?.({ x: this.player.x, y: this.player.y })
             this.player.setDepth(this.player.y)
             this.current = portals.find((portal) => Phaser.Math.Distance.Between(this.player.x, this.player.y, portal.x, portal.y) < portal.radius)
             actionRef.current(this.current ? ({ narrator: 'Войти в главный корпус', backend: 'Войти в Backend-корпус', frontend: 'Войти в Frontend-корпус', analytics: 'Войти в корпус аналитики' }[this.current.direction.slug] ?? `Войти в ${this.current.direction.title}`) : null)

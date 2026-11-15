@@ -1,0 +1,25 @@
+.frontend-workbench { min-width: 0; }
+.frontend-workspace { display: grid; grid-template-columns: minmax(0, 1fr) minmax(220px, 270px); gap: 16px; align-items: start; }
+.workbench-preview, .workbench-inspector { min-width: 0; padding: 12px; background: #101c33; border: 1px solid #455576; border-radius: 10px; }
+.workbench-inspector { display: grid; gap: 12px; }
+.workbench-inspector h3 { margin: 0; }
+.workbench-inspector label { display: grid; gap: 6px; }
+.workbench-inspector input, .workbench-inspector select { width: 100%; min-width: 0; box-sizing: border-box; }
+.workbench-range { display: grid; grid-template-columns: minmax(0, 1fr) 62px; gap: 8px; }
+.workbench-scroll { overflow: auto; max-height: 430px; padding: 5px; }
+.workbench-device { background: #f6f8ff; color: #213249; border: 3px solid #8398b8; border-radius: 10px; box-sizing: content-box; margin: auto; }
+.workbench-viewport { padding: 16px; min-height: 300px; }
+.workbench-card { box-sizing: border-box; background: #e4eafa; padding: 12px 0; cursor: pointer; }
+.workbench-card h3 { font-size: 1.2em; margin: 0 0 10px; }
+.workbench-card p { font-size: inherit; }
+.workbench-card .mock-cta { max-width: 100%; white-space: normal; overflow-wrap: anywhere; font-size: inherit; box-sizing: border-box; }
+.workbench-selected { outline: 2px dashed #587dea; outline-offset: 2px; }
+.workbench-products { display: flex; margin: 16px 0; }
+.workbench-product { min-width: 120px; min-height: 80px; box-sizing: border-box; flex: 1; padding: 10px; background: white; border-radius: 6px; }
+.workbench-form { color: #213249; background: #f6f8ff; max-width: 420px; margin: auto; border-radius: 10px; padding: 16px; }
+.workbench-fields { display: flex; gap: 12px; }
+.workbench-fields label { display: grid; gap: 6px; }
+.workbench-fields input { color: #213249; background: white; border: 1px solid #9eacc4; padding: 9px; width: 100%; box-sizing: border-box; }
+.workbench-form button { margin: 8px 0; }
+.workbench-user-flow { display: flex; flex-wrap: wrap; gap: 8px 24px; padding-left: 24px; }
+@media (max-width: 900px) { .frontend-workspace { grid-template-columns: minmax(0, 1fr); } }

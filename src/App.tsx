@@ -2,10 +2,13 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ApiClient, ApiError, type Achievement, type AdminScenario, type AdminScenarioInput, type AdminTask, type AdminTaskInput, type Direction, type FinalReport, type InterestEvent, type InterestProfile, type Quest, type Recommendation, type Scenario, type User } from './api'
 import { GameCanvas } from './GameCanvas'
 import { CampusCanvas } from './CampusCanvas'
+import { WorldControls } from './WorldControls'
+import { Dialogue } from './Dialogue'
+export { Dialogue } from './Dialogue'
 import { returnPosition, type CampusEntry, type CampusPosition } from './campusReturn'
 import { CampusPhone } from './campusos/CampusPhone'
-import { QuestInteraction } from './campusos/QuestInteraction'
-import { locationFor, mainBuilding, type WorldLocation } from './world'
+import { QuestConversation, QuestInteraction } from './campusos/QuestInteraction'
+import { locationFor, mainBuilding } from './world'
 import './style.css'
 
 const tokenKey = 'tvoyvybor.accessToken'
@@ -132,30 +135,61 @@ export function HubScreen({ api, user, onOnboardingComplete, initialBuildingId =
     return () => { active = false }
   }, [api, revision])
   const knownDirections = useMemo(() => data?.filter((direction) => locationFor(direction.slug)) ?? [], [data])
-  async function completeOnboarding() { onOnboardingComplete(await api.completeOnboarding()) }
   return <main className="game-shell">
-    {error ? <LoadState error={error} retry={() => { setError(''); setRevision((value) => value + 1) }} /> : !data ? <p className="game-loading">Загружаем кампус…</p> : <GameShell api={api} user={user} logout={logout} directions={knownDirections} initialBuildingId={initialBuildingId} firstVisit={!user.onboarding_completed} active={active && user.onboarding_completed} />}
-    {!user.onboarding_completed && <NarratorPrologue onComplete={completeOnboarding} />}
+    {error ? <LoadState error={error} retry={() => { setError(''); setRevision((value) => value + 1) }} /> : !data ? <p className="game-loading">Загружаем кампус…</p> : <GameShell api={api} user={user} onOnboardingComplete={onOnboardingComplete} logout={logout} directions={knownDirections} initialBuildingId={initialBuildingId} firstVisit={!user.intro_completed} active={active} />}
   </main>
 }
 
-function GameShell({ api, user, logout, directions, initialBuildingId, firstVisit, active }: { api: ApiClient, user: User, logout: () => void, directions: Direction[], initialBuildingId: number | 'main' | null, firstVisit: boolean, active: boolean }) {
+function GameShell({ api, user, onOnboardingComplete, logout, directions, initialBuildingId, firstVisit, active }: { api: ApiClient, user: User, onOnboardingComplete: (user: User) => void, logout: () => void, directions: Direction[], initialBuildingId: number | 'main' | null, firstVisit: boolean, active: boolean }) {
   const [phone, setPhone] = useState(false)
+  const [workQuestId, setWorkQuestId] = useState<number | null>(null)
   const [interaction, setInteraction] = useState<'npc' | 'server' | 'terminal' | null>(null)
   const [quests, setQuests] = useState<Quest[]>([])
+  const [story, setStory] = useState<{ final_quest_unlocked: boolean, final_quest_completed: boolean } | null>(null)
+  const [sceneReady, setSceneReady] = useState(false); const [minimumElapsed, setMinimumElapsed] = useState(false)
+  const [awards, setAwards] = useState<Achievement[]>([])
+  const showAwards = useCallback((items: Achievement[]) => { if (items.length) setAwards(items) }, [])
+  useEffect(() => { if (!awards.length) return; const timer = window.setTimeout(() => setAwards([]), 4500); return () => window.clearTimeout(timer) }, [awards])
   const [questError, setQuestError] = useState('')
   const [questsLoading, setQuestsLoading] = useState(true)
-  const reloadQuests = useCallback(async () => { setQuestsLoading(true); try { setQuests(await api.quests()); setQuestError('') } catch (e) { setQuestError(errorMessage(e)); throw e } finally { setQuestsLoading(false) } }, [api])
+  const reloadQuests = useCallback(async () => { setQuestsLoading(true); try { const [updatedQuests, updatedStory] = await Promise.all([api.quests(), api.gameState()]); setQuests(updatedQuests); setStory(updatedStory); setQuestError('') } catch (e) { setQuestError(errorMessage(e)); throw e } finally { setQuestsLoading(false) } }, [api])
   useEffect(() => { void reloadQuests().catch(() => {}) }, [reloadQuests])
-  const [building, setBuilding] = useState<Direction | null>(() => initialBuildingId === 'main' ? mainBuilding : directions.find((item) => item.id === initialBuildingId) ?? (firstVisit ? mainBuilding : null))
+  const savedPosition = useMemo(() => {
+    try { const raw = localStorage.getItem(`player_position_${user.id}`); const value = raw ? JSON.parse(raw) : null; const validScene = value?.scene === 'campus' ? value.x >= 0 && value.x <= 800 && value.y >= 0 && value.y <= 600 : ['narrator', 'backend', 'frontend', 'analytics'].includes(value?.scene) && value.x >= 0 && value.x <= 800 && value.y >= 0 && value.y <= 450; return value && validScene && Number.isFinite(value.x) && Number.isFinite(value.y) ? value as { scene: string, x: number, y: number } : null } catch { return null }
+  }, [user.id])
+  const savedBuilding = savedPosition && savedPosition.scene !== 'campus' ? savedPosition.scene === 'narrator' ? mainBuilding : directions.find(d => d.slug === savedPosition.scene) ?? null : null
+  const [building, setBuilding] = useState<Direction | null>(() => firstVisit ? mainBuilding : savedBuilding ?? (initialBuildingId === 'main' ? mainBuilding : directions.find((item) => item.id === initialBuildingId) ?? mainBuilding))
+  const initialRouteProcessed = useRef(false)
+  const lastRouteBuilding = useRef(initialBuildingId)
   const [dialogue, setDialogue] = useState(false); const [action, setAction] = useState<string | null>(null); const [transition, setTransition] = useState<'idle' | 'closing' | 'loading' | 'opening'>('idle'); const [fullscreen, setFullscreen] = useState(false); const shell = useRef<HTMLDivElement>(null)
   useEffect(() => { const handle = (event: KeyboardEvent) => { if (!active || dialogue || interaction) return; if (event.key === 'Tab' && !phone && !event.repeat) { event.preventDefault(); setPhone(true) } else if (event.key === 'Escape' && phone) { event.preventDefault(); setPhone(false) } }; window.addEventListener('keydown', handle); return () => window.removeEventListener('keydown', handle) }, [active, phone, interaction, dialogue])
   const actionTrigger = useRef<() => void>(() => {})
   const actionButton = useRef<HTMLButtonElement>(null)
   const campusEntry = useRef<CampusEntry | null>(null)
-  const [campusSpawn, setCampusSpawn] = useState<CampusPosition | undefined>()
+  const campusPosition = useRef<CampusPosition>({ x: 400, y: 330 })
+  const updateCampusPosition = useCallback((position: CampusPosition) => { campusPosition.current = position }, [])
+  const [campusSpawn, setCampusSpawn] = useState<CampusPosition | undefined>(() => !firstVisit && savedPosition?.scene === 'campus' ? { x: savedPosition.x, y: savedPosition.y } : undefined)
+  const [buildingSpawn, setBuildingSpawn] = useState<{ x: number, y: number } | undefined>(() => firstVisit ? { x: 370, y: 250 } : savedPosition && savedPosition.scene !== 'campus' ? { x: savedPosition.x, y: savedPosition.y } : undefined)
+  const [mentorStep, setMentorStep] = useState<number | null>(null)
+  const lastPositionWrite = useRef(0)
+  const savePosition = useCallback((scene: string, position: { x: number, y: number }, force = false) => {
+    if (!force && Date.now() - lastPositionWrite.current < 1500) return
+    try { localStorage.setItem(`player_position_${user.id}`, JSON.stringify({ scene, x: position.x, y: position.y })); lastPositionWrite.current = Date.now() } catch { /* storage can be disabled */ }
+  }, [user.id])
+  const playerPosition = useRef<{ x: number, y: number }>(buildingSpawn ?? campusSpawn ?? { x: 370, y: 250 })
+  const activeScene = useRef(building?.slug ?? 'campus')
+  activeScene.current = building?.slug ?? 'campus'
+  const saveAndLogout = useCallback(() => { savePosition(activeScene.current, playerPosition.current, true); logout() }, [logout, savePosition])
+  useEffect(() => {
+    const persist = () => savePosition(activeScene.current, playerPosition.current, true)
+    window.addEventListener('pagehide', persist)
+    document.addEventListener('visibilitychange', persist)
+    return () => { window.removeEventListener('pagehide', persist); document.removeEventListener('visibilitychange', persist) }
+  }, [savePosition])
+  useEffect(() => { if (active && firstVisit && building?.slug === 'narrator' && sceneReady && transition === 'idle') setMentorStep(0) }, [active, firstVisit, building?.slug, sceneReady, transition])
+  const workQuests = quests.filter(q => q.location_slug === building?.slug && q.status === 'active' && q.gameplay)
+  const workQuest = workQuests.find(q => q.id === workQuestId) ?? workQuests.find(q => q.tracked) ?? workQuests[0]
   const location = building ? locationFor(building.slug) : undefined
-  const [sceneReady, setSceneReady] = useState(false); const [minimumElapsed, setMinimumElapsed] = useState(false)
   useEffect(() => {
     if (transition !== 'loading') return
     const timer = window.setTimeout(() => setMinimumElapsed(true), 2400)
@@ -170,14 +204,29 @@ function GameShell({ api, user, logout, directions, initialBuildingId, firstVisi
     const timer = window.setTimeout(() => setTransition('idle'), 320)
     return () => window.clearTimeout(timer)
   }, [transition])
-  useEffect(() => { const selected = initialBuildingId === 'main' ? mainBuilding : directions.find((item) => item.id === initialBuildingId) ?? null; if (selected) setBuilding(selected) }, [directions, initialBuildingId])
+  useEffect(() => {
+    if (!initialRouteProcessed.current) {
+      initialRouteProcessed.current = true
+      if (firstVisit) setBuilding(mainBuilding)
+      else if (savedBuilding) setBuilding(savedBuilding)
+      else setBuilding(mainBuilding)
+      return
+    }
+    if (lastRouteBuilding.current !== initialBuildingId) {
+      lastRouteBuilding.current = initialBuildingId
+      const selected = initialBuildingId === 'main' ? mainBuilding : directions.find((item) => item.id === initialBuildingId)
+      setBuilding(initialBuildingId === null ? null : selected ?? mainBuilding)
+      return
+    }
+    if (savedBuilding) setBuilding(savedBuilding)
+  }, [directions, initialBuildingId, firstVisit, savedBuilding])
   useEffect(() => { const sync = () => { setFullscreen(document.fullscreenElement === shell.current); if (!document.fullscreenElement) shell.current?.focus() }; document.addEventListener('fullscreenchange', sync); return () => document.removeEventListener('fullscreenchange', sync) }, [])
   const changePlace = useCallback((next: Direction | null) => {
     if (transition !== 'idle') return
-    if (!next && building) setCampusSpawn(returnPosition(building.slug, campusEntry.current))
+    if (!next && building) { const position = returnPosition(building.slug, campusEntry.current); setCampusSpawn(position); if (position) { playerPosition.current = position; savePosition('campus', position, true) } }
     setAction(null); setDialogue(false); setSceneReady(false); setMinimumElapsed(false); setTransition('closing')
     window.setTimeout(() => { setBuilding(next); if (currentRoute() === 'hub' || currentRoute() === 'building') window.location.hash = next ? `#/building/${next.slug === 'narrator' ? 'main' : next.id}` : '#/hub'; setTransition('loading') }, 280)
-  }, [transition, building])
+  }, [transition, building, savePosition])
   useEffect(() => {
     let timer: number | undefined
     const actionElement = actionButton.current
@@ -193,68 +242,79 @@ function GameShell({ api, user, logout, directions, initialBuildingId, firstVisi
   }, [active, dialogue, phone, interaction, transition, action])
   async function toggleFullscreen() { if (document.fullscreenElement) await document.exitFullscreen(); else await shell.current?.requestFullscreen() }
   return <section className="play-area" ref={shell} tabIndex={-1} aria-label="Игровая область">
-    <div className="world-controls"><button type="button" onClick={() => setPhone(true)}>Телефон · Tab</button>{user.role === 'admin' && <a href="#/admin">Администрирование</a>}<button type="button" onClick={() => void toggleFullscreen()}>{fullscreen ? 'Свернуть' : 'На весь экран'}</button></div>
-    {building && location ? <GameCanvas onActionReady={(invoke) => { actionTrigger.current = invoke }} onReady={() => setSceneReady(true)} directionSlug={building.slug} questMarker={building.slug === 'backend' && quests.some((q) => q.giver_npc_id === 'boris' && (q.status === 'available' || q.status === 'abandoned'))} blocked={!active || dialogue || phone || !!interaction || transition !== 'idle'} onActionChange={setAction} onInteract={() => building.slug === 'backend' ? setInteraction('npc') : setDialogue(true)} onObject={setInteraction} onExit={() => changePlace(null)} /> : <CampusCanvas onActionReady={(invoke) => { actionTrigger.current = invoke }} initialPosition={campusSpawn} onReady={() => setSceneReady(true)} directions={directions} blocked={!active || phone || !!interaction || transition !== 'idle'} onActionChange={setAction} onEnter={(direction, position) => { campusEntry.current = { slug: direction.slug, position }; changePlace(direction) }} />}
-    {action && !dialogue && <button ref={actionButton} type="button" className="action-prompt" onClick={() => actionTrigger.current()}><kbd>E</kbd><span>{action}</span></button>}
+    <WorldControls fullscreen={fullscreen} toggleFullscreen={() => void toggleFullscreen()} openPhone={() => setPhone(true)} isAdmin={user.role === 'admin'} />
+    {building && location ? <GameCanvas initialPosition={buildingSpawn} onPositionChange={(position) => { playerPosition.current = position; savePosition(building.slug, position) }} onActionReady={(invoke) => { actionTrigger.current = invoke }} onReady={() => setSceneReady(true)} directionSlug={building.slug} stationSolved={!!workQuest?.gameplay?.state.success} blocked={!active || dialogue || mentorStep !== null || phone || !!interaction || transition !== 'idle'} onActionChange={setAction} onInteract={() => building.slug === 'narrator' || quests.some(q => q.location_slug === building.slug && q.gameplay) ? setInteraction('npc') : setDialogue(true)} onObject={setInteraction} onExit={() => changePlace(null)} /> : <CampusCanvas onPositionChange={(position) => { playerPosition.current = position; updateCampusPosition(position); savePosition('campus', position) }} onActionReady={(invoke) => { actionTrigger.current = invoke }} initialPosition={campusSpawn} onReady={() => setSceneReady(true)} directions={directions} blocked={!active || phone || !!interaction || transition !== 'idle'} onActionChange={setAction} onEnter={(direction, position) => { campusEntry.current = { slug: direction.slug, position }; setBuildingSpawn({ x: 370, y: 250 }); playerPosition.current = { x: 370, y: 250 }; savePosition(direction.slug, playerPosition.current, true); changePlace(direction) }} />}
+    {action && !dialogue && !interaction && !phone && <button ref={actionButton} type="button" className="action-prompt" onClick={() => actionTrigger.current()}><kbd>E</kbd><span>{action}</span></button>}
     {questError && <div role="alert" className="quest-error">{questError} <button type="button" onClick={() => void reloadQuests().catch(() => {})}>Повторить</button></div>}
-    {quests.find((q) => q.tracked) && <div className="quest-tracker">★ {quests.find((q) => q.tracked)?.title}: {quests.find((q) => q.tracked)?.objectives.find((o) => !o.completed)?.title}</div>}
-    {phone && <CampusPhone api={api} user={user} quests={quests} loading={questsLoading} loadError={questError} reload={reloadQuests} close={() => { setPhone(false); shell.current?.focus() }} logout={logout} profile={<ProfileScreen api={api} />} results={<ResultsScreen api={api} />} />}
-    {interaction && <QuestInteraction api={api} quest={quests.find((q) => q.slug === 'server-on-vacation')} target={interaction} reload={reloadQuests} close={() => setInteraction(null)} dialogue={() => { setInteraction(null); setDialogue(true) }} />}
+    {phone && <CampusPhone api={api} user={user} quests={quests} loading={questsLoading} loadError={questError} reload={reloadQuests} close={() => { setPhone(false); shell.current?.focus() }} logout={saveAndLogout} position={building && location ? location.campusPortal : campusPosition.current} currentBuilding={building?.slug} finalQuestUnlocked={!!story?.final_quest_unlocked && !story.final_quest_completed} onFinalQuest={() => { setPhone(false); if (building?.slug !== 'narrator') changePlace(mainBuilding); else setInteraction('npc') }} profile={<><ProfileScreen api={api} compact /><ResultsScreen api={api} compact /></>} />}
+    {awards.length > 0 && <div className="quest-award-toast" role="status">{awards.map(a => <div key={a.slug}>✦ {a.title}<small>{a.description}</small></div>)}</div>}
+    {interaction === 'npc' && location && (location.slug === 'narrator' ? <MentorConversation api={api} location={location} quests={quests} story={story} onStory={setStory} onAwards={showAwards} close={() => setInteraction(null)} /> : <QuestConversation api={api} quests={quests.filter(q => q.location_slug === location.slug && q.gameplay)} location={location} userId={user.id} onAwards={showAwards} reload={reloadQuests} close={() => setInteraction(null)} />)}
+    {interaction && interaction !== 'npc' && <QuestInteraction key={`${building?.slug}:${interaction}:${workQuest?.id}`} api={api} quest={workQuest} alternatives={workQuests} selectQuest={setWorkQuestId} target={interaction} userId={user.id} onAwards={showAwards} reload={reloadQuests} close={() => setInteraction(null)} />}
     {dialogue && location && <Dialogue location={location} onClose={() => { setDialogue(false); shell.current?.focus() }} /> }
+    {mentorStep !== null && location && <MentorIntro location={location} step={mentorStep} onStep={setMentorStep} onComplete={async () => { const state = await api.completeGameIntro(); onOnboardingComplete({ ...user, intro_completed: true }); setMentorStep(null); setStory(state); savePosition('narrator', playerPosition.current, true) }} />}
     <div className={`iris-transition iris-${transition}`} aria-hidden="true" />
     {transition === 'loading' && <div className="loading-card" role="status">Новая локация готовится… <small>Совет: хороший лог часто честнее воспоминаний о том, «как всё работало вчера».</small><img className="loading-spinner" src="/content/loading-spinner.svg" alt="" /></div>}
   </section>
 }
 
-export function Dialogue({ location, onClose }: { location: WorldLocation, onClose: () => void }) {
-  const [choice, setChoice] = useState<number | null>(null)
-  const panelRef = useRef<HTMLDivElement>(null)
-  const timerRef = useRef<number | undefined>(undefined)
-  const [pressed, setPressed] = useState<string | null>(null)
-  const [speaker, setSpeaker] = useState<'npc' | 'player'>('npc')
-  const selected = choice === null ? undefined : location.choices[choice]
-  const playerSpeaking = speaker === 'player' && selected !== undefined
-  const name = playerSpeaking ? 'Стажёр Ноль' : location.name
-  const text = playerSpeaking ? selected.text : selected?.reaction ?? location.greeting
-  const portrait = playerSpeaking ? '/content/characters/player/player_robot_front.png' : selected ? `/content/characters/npcs/emotions/${location.slug}/${selected.emotion}.png` : location.portrait
-
-  useEffect(() => {
-    const handle = (event: KeyboardEvent) => {
-      if (event.repeat || timerRef.current !== undefined) return
-      const key = event.key === 'Escape' ? 'Escape' : /^[0-9]$/.test(event.key) ? event.key : null
-      if (!key) return
-      const button = panelRef.current?.querySelector<HTMLButtonElement>(`button[data-shortcut="${key}"]`)
-      if (!button) return
-      event.preventDefault()
-      setPressed(key)
-      timerRef.current = window.setTimeout(() => { timerRef.current = undefined; setPressed(null); button.click() }, 120)
-    }
-    window.addEventListener('keydown', handle)
-    return () => { window.removeEventListener('keydown', handle); if (timerRef.current !== undefined) { window.clearTimeout(timerRef.current); timerRef.current = undefined } }
-  }, [])
-
-  return <div className="dialogue-interface" role="dialog" aria-modal="true" aria-label={`Разговор: ${location.name}`}>
-    <div ref={panelRef} className="dialogue-choices" aria-label="Действия в диалоге">
-      {choice === null ? location.choices.map((item, index) => <button key={item.text} data-shortcut={String((index + 1) % 10)} className={pressed === String((index + 1) % 10) ? 'key-pressed' : undefined} type="button" onClick={() => { setChoice(index); setSpeaker('player') }}><kbd aria-hidden="true">{(index + 1) % 10}</kbd><span>{item.text}</span></button>) : playerSpeaking ? <button data-shortcut="1" className={pressed === '1' ? 'key-pressed' : undefined} type="button" onClick={() => setSpeaker('npc')}><kbd aria-hidden="true">1</kbd><span>Продолжить</span></button> : <button data-shortcut="1" className={pressed === '1' ? 'key-pressed' : undefined} type="button" onClick={() => setChoice(null)}><kbd aria-hidden="true">1</kbd><span>Выбрать другую тему</span></button>}
-      <button data-shortcut="Escape" className={`dialogue-end${pressed === 'Escape' ? ' key-pressed' : ''}`} type="button" onClick={onClose}><kbd aria-hidden="true">Esc</kbd><span>Завершить разговор</span></button>
-    </div>
-    <div className={`dialogue-overlay${playerSpeaking ? ' player-line' : ''}`}>
-      {!playerSpeaking && <img src={portrait} alt={`Портрет ${name}`} />}
-      <div className="dialogue-copy"><strong>{name}</strong><p>{text}</p></div>
-      {playerSpeaking && <img src={portrait} alt={`Портрет ${name}`} />}
-    </div>
-  </div>
-}
 
 function HelpScreen() { return <main className="content"><section className="panel"><h1>Помощь</h1><p>Это прогулка по IT-кампусу: разговаривайте с мастерами и выбирайте темы без правильных ответов или оценок.</p><ul className="event-list"><li><strong>WASD / стрелки</strong><p>Движение по доступным дорожкам.</p></li><li><strong>E</strong><p>Войти в корпус, поговорить с мастером или выйти в хаб.</p></li><li><strong>Fullscreen</strong><p>Кнопка «На весь экран» разворачивает игровое окно; выход — Esc.</p></li></ul></section></main> }
 
-function NarratorPrologue({ onComplete }: { onComplete: () => Promise<void> }) {
-  const [busy, setBusy] = useState(false); const [error, setError] = useState('')
-  async function finish() { setBusy(true); setError(''); try { await onComplete() } catch (cause) { setError(errorMessage(cause)); setBusy(false) } }
-  return <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label="Пролог Дяди Дебага"><section className="panel narrator-prologue"><img src="/content/characters/npcs/npc_narrator_portrait.png" alt="Дядя Дебаг" /><div><span className="eyebrow">Дядя Дебаг</span><h2>Добро пожаловать в кампус</h2><p>Здесь можно пробовать разные IT-направления без единственно правильного маршрута. Подходите к корпусам, говорите с мастерами и выбирайте задания.</p>{error && <p className="error" role="alert">{error}</p>}<div className="admin-actions"><button className="primary" type="button" disabled={busy} onClick={finish}>Продолжить</button><button type="button" disabled={busy} onClick={finish}>Пропустить</button></div></div></section></div>
+const mentorIntro = [
+  { text: 'Привет. Добро пожаловать. Здесь мы обычно не спрашиваем, кем ты видишь себя через пять лет. У нас даже календарь от таких вопросов закрывается.', emotion: 'friendly' as const, choices: ['Звучит уже неплохо.', 'А что тогда будем делать?'] },
+  { text: 'Дадим тебе попробовать настоящие, только немного упрощённые задачи. Не экзамен и не ловушка: если что-то не выйдет, мир не рухнет. Максимум — серверная драматично мигнёт.', emotion: 'thinking' as const, choices: ['А как поймём, что мне подходит?'] },
+  { text: 'По тому, что ты делаешь и к чему возвращаешься. Backend — про то, что работает за кулисами; Frontend — про интерфейсы; аналитика — про вопросы к данным. Пока без лекции на сорок слайдов, обещаю.', emotion: 'friendly' as const, choices: ['То есть профессию тест не угадывает?'] },
+  { text: 'Именно. Тут не угадывают профессию по тесту. Мы постепенно собираем профиль по твоему опыту и интересу. Можно ошибаться, просить подсказки и менять направление — это не баг, это исследование.', emotion: 'thinking' as const, choices: ['Что делать дальше?'] },
+  { text: 'Открой телефон: в «Заданиях» уже лежат варианты. Выбирай то, что меньше всего похоже на мучение. Ну всё, дальше сам — я тут, если понадобится навигация.', emotion: 'friendly' as const, choices: ['Пойду посмотрю.'] },
+]
+
+function MentorIntro({ location, step, onStep, onComplete }: { location: NonNullable<ReturnType<typeof locationFor>>, step: number, onStep: (step: number | null) => void, onComplete: () => Promise<void> }) {
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const [reply, setReply] = useState<string | null>(null)
+  const line = mentorIntro[step]
+  const finishWithReply = async () => {
+    if (step < mentorIntro.length - 1) { setReply(null); onStep(step + 1); return }
+    setBusy(true); setError('')
+    try { await onComplete() } catch (cause) { setError(errorMessage(cause)); setBusy(false) }
+  }
+  if (reply !== null) return <Dialogue location={location} onClose={() => {}} scene={{ text: reply, speaker: 'player', busy, error, choices: [], advance: finishWithReply }} />
+  return <Dialogue location={location} onClose={() => {}} scene={{ text: line.text, emotion: line.emotion, busy, error, choices: line.choices.map(text => ({ text, select: () => setReply(text) })) }} />
 }
 
-function ProfileScreen({ api }: { api: ApiClient }) {
+function MentorConversation({ api, location, quests, story, onStory, close }: { api: ApiClient, location: NonNullable<ReturnType<typeof locationFor>>, quests: Quest[], story: { final_quest_unlocked: boolean, final_quest_completed: boolean } | null, onStory: (state: { final_quest_unlocked: boolean, final_quest_completed: boolean }) => void, onAwards: (items: Achievement[]) => void, close: () => void }) {
+  const [answer, setAnswer] = useState<string | null>(null)
+  const [finalStage, setFinalStage] = useState(false)
+  const [error, setError] = useState('')
+  const [busy, setBusy] = useState(false)
+  const topics = [
+    ['Что это вообще за место?', 'Кампус-песочница. Тут дают попробовать работу разных IT-команд без собеседования и без вопроса про пять лет.'],
+    ['Что мне сейчас делать?', 'Открой телефон. В «Заданиях» всё, что сейчас доступно. Я бы выбрал то, что меньше всего похоже на мучение.'],
+    ['Как выбрать направление?', 'Не выбирай навсегда. Возьми задачу, которая зацепила, и посмотри, хочется ли продолжить. Это надёжнее гадания по кофейной гуще.'],
+    ['Что такое Backend?', 'Внутренняя кухня: данные, правила и сервисы. Если интерфейс — витрина, backend следит, чтобы за ней не жил один картон.'],
+    ['Что такое Frontend?', 'То, с чем человек взаимодействует на экране. Хороший frontend делает сложное понятным и не прячет кнопку в кустах.'],
+    ['Чем занимается аналитик?', 'Задаёт данным правильные вопросы и проверяет, не врёт ли красивый график. Графики умеют быть очень убедительными.'],
+    ['Где посмотреть задания?', 'В телефоне, приложение «Задания». Я специально не пересказываю список — телефон хотя бы не забывает названия.'],
+    ['Как работает мой профиль?', 'Он собирает наблюдения о том, что ты пробовал и как на это реагировал. Подробности — в телефоне, приложение «Профиль».'],
+    ['Можно ли ошибаться?', 'Нужно. Ошибка — это наблюдение, иногда просто с очень громким интерфейсом.'],
+  ] as const
+  const completed = quests.filter(q => q.status === 'completed' && q.gameplay)
+  const directions = ['backend', 'frontend', 'analytics'].map(slug => ({ slug, name: ({ backend: 'Backend', frontend: 'Frontend', analytics: 'Analytics' } as Record<string, string>)[slug], items: completed.filter(q => q.location_slug === slug) })).filter(d => d.items.length)
+  const highlights = directions.map(d => {
+    const more = d.items.filter(q => ['more', 'interesting'].includes(q.gameplay?.state.reaction ?? '')).length
+    const support = d.items.reduce((sum, q) => sum + q.gameplay!.state.hints + (q.gameplay!.state.example_used ? 1 : 0), 0)
+    const explored = d.items.some(q => q.gameplay!.state.extra_exploration > 0)
+    return more > 0 ? `${d.name}: в ${more} ${more === 1 ? 'задаче' : 'задачах'} ты отметил, что было интересно${explored ? ' и продолжил исследовать после решения' : ''}${support ? '; подсказки тоже были частью работы' : ''}.` : `${d.name}: ты попробовал это направление${support ? ' и пользовался подсказками, когда они помогали' : ''}. Даже если не твоё — полезно знать.`
+  })
+  const recommendation = [...directions].sort((a, b) => b.items.filter(q => ['more', 'interesting'].includes(q.gameplay?.state.reaction ?? '')).length - a.items.filter(q => ['more', 'interesting'].includes(q.gameplay?.state.reaction ?? '')).length)[0]
+  if (finalStage && story?.final_quest_unlocked && !story.final_quest_completed) {
+    return <Dialogue location={location} onClose={close} scene={{ text: `Ну что, ты прошёл все три направления. ${highlights.join(' ')} ${recommendation && recommendation.items.some(q => ['more', 'interesting'].includes(q.gameplay?.state.reaction ?? '')) ? `Я бы пока присмотрелся к ${recommendation.name}: там у тебя было больше всего любопытства.` : 'Профиль пока не дал достаточно сигналов для уверенного вывода — это тоже честный результат.'} Подробности я оставил в профиле на телефоне. Я могу показать двери. В какую заходить дальше — решать тебе.`, emotion: 'friendly', error, busy, choices: [{ text: 'Завершить разговор', select: () => { setBusy(true); void api.completeFinalQuest().then(state => { onStory(state); close() }).catch(e => { setError(errorMessage(e)); setBusy(false) }) } }] }} />
+  }
+  if (answer) return <Dialogue location={location} onClose={close} onBack={() => setAnswer(null)} scene={{ text: answer, emotion: 'thinking', choices: [{ text: 'Ещё вопрос', select: () => setAnswer(null) }, ...(story?.final_quest_unlocked && !story.final_quest_completed ? [{ text: 'Подвести итоги путешествия', select: () => setFinalStage(true) }] : []), { text: 'До встречи', select: close }] }} />
+  return <Dialogue location={location} onClose={close} scene={{ text: story?.final_quest_unlocked && !story.final_quest_completed ? 'О, ты как раз вовремя. Все обязательные задачи позади. Хочешь подвести итоги?' : 'Ну что, куда сегодня заглянем? Вопросы принимаются, но ответы будут короче моей очереди на кофе.', emotion: 'friendly', canExit: true, choices: [...topics.map(([q, a]) => ({ text: q, select: () => setAnswer(a) })), ...(story?.final_quest_unlocked && !story.final_quest_completed ? [{ text: 'Да, давай подведём итоги', select: () => setFinalStage(true) }] : [])] }} />
+}
+
+function ProfileScreen({ api, compact = false }: { api: ApiClient, compact?: boolean }) {
   const [data, setData] = useState<{ directions: Direction[], profile: InterestProfile, events: InterestEvent[] } | null>(null)
   const [error, setError] = useState('')
   const [revision, setRevision] = useState(0)
@@ -266,15 +326,15 @@ function ProfileScreen({ api }: { api: ApiClient }) {
     return () => { active = false }
   }, [api, revision])
   return <main className="content">
-    <div className="page-heading"><span className="eyebrow">Ваш путь</span><h1>Профиль интересов</h1><p>Исторические данные получены из старых заданий и не являются оценкой интереса по новым квестам.</p></div>
+    <div className="page-heading"><span className="eyebrow">Ваш путь</span><h1>{compact ? 'Интересы' : 'Профиль интересов'}</h1><p>{compact ? 'История ответов из старых заданий.' : 'Исторические данные получены из старых заданий и не являются оценкой интереса по новым квестам.'}</p></div>
     {error ? <LoadState error={error} retry={() => { setError(''); setRevision((value) => value + 1) }} /> : !data ? <p>Загружаем профиль…</p> : <>
-      <section className="panel"><h2>Направления</h2>{Object.keys(data.profile.direction_scores).length === 0 ? <p>Исторических наблюдений пока нет. Новые квесты не оценивают правильность ответов.</p> : <ul className="score-list">{Object.entries(data.profile.direction_scores).map(([id, score]) => <li key={id}><span>{data.directions.find((item) => item.id === Number(id))?.title ?? `Направление ${id}`}</span><strong>{score}</strong></li>)}</ul>}<p className="muted">Учтено событий: {data.profile.event_count}</p></section>
+      <section className="panel"><h2>Направления</h2>{Object.keys(data.profile.direction_scores).length === 0 ? <p>{compact ? 'Наблюдений пока нет.' : 'Исторических наблюдений пока нет. Новые квесты не оценивают правильность ответов.'}</p> : <ul className="score-list">{Object.entries(data.profile.direction_scores).map(([id, score]) => <li key={id}><span>{data.directions.find((item) => item.id === Number(id))?.title ?? `Направление ${id}`}</span><strong>{score}</strong></li>)}</ul>}<p className="muted">Учтено событий: {data.profile.event_count}</p></section>
       <section className="panel"><h2>История наблюдений</h2>{data.events.length === 0 ? <p>Событий пока нет.</p> : <ul className="event-list">{data.events.map((event, index) => <li key={`${event.task_id}-${index}`}><strong>{data.directions.find((item) => item.id === event.direction_id)?.title ?? `Направление ${event.direction_id}`}</strong><p>{event.explanation}</p></li>)}</ul>}</section>
     </>}
   </main>
 }
 
-function ResultsScreen({ api }: { api: ApiClient }) {
+function ResultsScreen({ api, compact = false }: { api: ApiClient, compact?: boolean }) {
   const [data, setData] = useState<{ report: FinalReport, recommendation: Recommendation | null, achievements: Achievement[], scenarios: Scenario[] } | null>(null)
   const [error, setError] = useState('')
   const [revision, setRevision] = useState(0)
@@ -286,7 +346,7 @@ function ResultsScreen({ api }: { api: ApiClient }) {
     return () => { active = false }
   }, [api, revision])
   return <main className="content">
-    <div className="page-heading"><span className="eyebrow">Отчёт отдела кадров, который никто не просил</span><h1>Результаты</h1><p>Отчёт основан на исторических ответах в старых заданиях, а не на новых квестах; это не психологическая диагностика.</p></div>
+    <div className="page-heading"><span className="eyebrow">{compact ? 'Ваш путь' : 'Отчёт отдела кадров, который никто не просил'}</span><h1>{compact ? 'Отчёт' : 'Результаты'}</h1><p>{compact ? 'История старых заданий; не диагностика.' : 'Отчёт основан на исторических ответах в старых заданиях, а не на новых квестах; это не психологическая диагностика.'}</p></div>
     {error ? <LoadState error={error} retry={() => { setError(''); setRevision((value) => value + 1) }} /> : !data ? <p>Загружаем результаты…</p> : <>
       <section className="panel"><h2>Что мы увидели в игре</h2><p>Зафиксировано наблюдений: {data.report.event_count}. Завершено заданий: {data.report.completed_task_count}.</p>{data.report.observations.length === 0 ? <p>Пока недостаточно игровых фактов для выводов.</p> : <ul className="event-list">{data.report.observations.map((item) => <li key={item}>{item}</li>)}</ul>}</section>
       <section className="panel"><h2>Направления для дальнейшего изучения</h2>{data.report.directions.length === 0 ? <p>Исторических данных пока недостаточно для ориентиров.</p> : <ul className="event-list">{data.report.directions.map((item) => <li key={item.direction_id}><strong>{item.title}</strong><p>{item.reason} Учтённый сигнал: {item.score}.</p></li>)}</ul>}{data.report.next_steps.length > 0 && <><h3>Что попробовать дальше</h3><ul className="event-list">{data.report.next_steps.map((item) => <li key={item}>{item}</li>)}</ul></>}</section>

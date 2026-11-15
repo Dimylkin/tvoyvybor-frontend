@@ -1,3 +1,38 @@
+export interface GameState {
+  stage: 'intro' | 'interaction' | 'mini-game' | 'return' | 'result' | 'complete'
+  assistant_questions?: string[]
+  intro_deferred?: boolean
+  code_answer?: string
+  interview_history?: string[]
+  proposal_draft?: Record<string, string>
+  intro_line?: number
+  debrief_line?: number
+  repair_code?: string
+  failed_checks?: number
+  user_trace?: { step: string, passed: boolean, message: string }[]
+  choices?: string[]
+  seen: string[]
+  attempts: number
+  hints: number
+  example_used: boolean
+  example_shown?: boolean
+  user_checks?: Record<string, boolean>
+  extra_exploration: number
+  extra_result?: string
+  active_seconds: number
+  voluntary: boolean
+  success: boolean
+  feedback: string
+  reaction?: string
+  code?: string
+  properties?: Record<string, string>
+  device_results?: Record<string, { overflow: boolean, cards: boolean, button: boolean, readability: boolean }>
+  checked?: string[]
+  tests?: { input: (number | null)[], passed: boolean, detail: string }[]
+  user_step?: number
+}
+export interface GameActionResult { state: GameState, awards: Achievement[] }
+
 export interface QuestObjective {
   id: number
   title: string
@@ -22,6 +57,7 @@ export interface Quest {
   completed_at: string | null
   tracked: boolean
   objectives: QuestObjective[]
+  gameplay?: { kind: string, state: GameState } | null
 }
 
 export interface InteractionResult {
@@ -34,6 +70,15 @@ export interface User {
   email: string
   role: 'user' | 'admin'
   onboarding_completed: boolean
+  intro_completed: boolean
+  main_story_completed: boolean
+}
+
+export interface StoryState {
+  intro_completed: boolean
+  final_quest_unlocked: boolean
+  final_quest_completed: boolean
+  main_story_completed: boolean
 }
 
 export interface Direction {
@@ -208,6 +253,7 @@ export class ApiClient {
     return this.request('/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) }, false)
   }
 
+  questAction(id: number, requestId: string, action: string, payload: Record<string, unknown> = {}): Promise<GameActionResult> { return this.request(`/quests/${id}/actions`, { method: 'POST', body: JSON.stringify({ request_id: requestId, action, payload }) }) }
   quests(): Promise<Quest[]> { return this.request('/quests') }
   offerQuest(id: number, npcId: string): Promise<Quest> { return this.request(`/quests/${id}/offer`, { method: 'POST', body: JSON.stringify({ npc_id: npcId }) }) }
   acceptQuest(id: number): Promise<Quest> { return this.request(`/quests/${id}/accept`, { method: 'POST' }) }
@@ -217,6 +263,9 @@ export class ApiClient {
   interact(requestId: string, eventType: string, targetKey: string, payload: Record<string, unknown> = {}): Promise<InteractionResult> { return this.request('/game/interactions', { method: 'POST', body: JSON.stringify({ request_id: requestId, event_type: eventType, target_key: targetKey, payload }) }) }
 
   me(): Promise<User> { return this.request('/auth/me') }
+  gameState(): Promise<StoryState> { return this.request('/game/state') }
+  completeGameIntro(): Promise<StoryState> { return this.request('/game/intro-complete', { method: 'PUT' }) }
+  completeFinalQuest(): Promise<StoryState> { return this.request('/game/final-quest/complete', { method: 'PUT' }) }
   completeOnboarding(): Promise<User> { return this.request('/auth/me/onboarding-complete', { method: 'PUT' }) }
   directions(): Promise<Direction[]> { return this.request('/directions') }
   scenarios(): Promise<Scenario[]> { return this.request('/scenarios') }

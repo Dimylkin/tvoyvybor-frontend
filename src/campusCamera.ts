@@ -1,3 +1,4 @@
+export const CAMPUS_TILES = ['top_left', 'top_right', 'bottom_left', 'bottom_right'] as const
 export const CAMPUS = { width: 800, height: 600, viewportWidth: 800, viewportHeight: 500 }
 export const CAMERA = { zoom: 2.2, followSpeed: 4 }
 
