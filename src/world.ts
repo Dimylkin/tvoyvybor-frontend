@@ -10,6 +10,7 @@ export interface WorldLocation {
   name: string
   campusPortal: { x: number, y: number, radius: number }
   npc: { x: number, y: number }
+  workstation?: { x: number, y: number }
   exit: { x: number, y: number }
   floor: { top: number, bottom: number }
   scale: { min: number, max: number }
@@ -36,6 +37,7 @@ export const worldLocations: Record<string, WorldLocation> = {
     walkable: [{ x: 82, y: 205, width: 636, height: 210 }], blocking: [],
   },
   backend: {
+    workstation: { x: 394, y: 92 },
     slug: 'backend', label: 'Backend', name: 'Борис Бэкендович', campusPortal: { x: 125, y: 245, radius: 40 }, npc: { x: 175, y: 195 }, exit: { x: 400, y: 435 }, floor: { top: 205, bottom: 415 }, scale: { min: .11, max: .16 },
     interior: '/content/backgrounds/interior_backend.png', npcBase: '/content/characters/npcs/npc_backend_base.png',
     portrait: '/content/characters/npcs/npc_backend_portrait.png',
@@ -48,6 +50,7 @@ export const worldLocations: Record<string, WorldLocation> = {
     walkable: [{ x: 82, y: 205, width: 636, height: 210 }], blocking: [{ x: 245, y: 220, width: 165, height: 95 }, { x: 455, y: 205, width: 110, height: 78 }],
   },
   frontend: {
+    workstation: { x: 515, y: 135 },
     slug: 'frontend', label: 'Frontend', name: 'Фронтина Пиксельевна', campusPortal: { x: 675, y: 255, radius: 40 }, npc: { x: 630, y: 336 }, exit: { x: 400, y: 435 }, floor: { top: 205, bottom: 415 }, scale: { min: .11, max: .16 },
     interior: '/content/backgrounds/interior_frontend.png', npcBase: '/content/characters/npcs/npc_frontend_base.png',
     portrait: '/content/characters/npcs/npc_frontend_portrait.png',
@@ -60,6 +63,7 @@ export const worldLocations: Record<string, WorldLocation> = {
     walkable: [{ x: 82, y: 205, width: 636, height: 210 }], blocking: [{ x: 250, y: 225, width: 155, height: 85 }, { x: 445, y: 215, width: 120, height: 95 }],
   },
   analytics: {
+    workstation: { x: 615, y: 165 },
     slug: 'analytics', label: 'Analytics', name: 'Анна Литикова', campusPortal: { x: 135, y: 515, radius: 40 }, npc: { x: 400, y: 145 }, exit: { x: 400, y: 435 }, floor: { top: 205, bottom: 415 }, scale: { min: .11, max: .16 },
     interior: '/content/backgrounds/interior_analytics.png', npcBase: '/content/characters/npcs/npc_analytics_base.png',
     portrait: '/content/characters/npcs/npc_analytics_portrait.png',

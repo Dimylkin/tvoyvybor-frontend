@@ -1,0 +1,10 @@
+.terminal-panel .investigation-log-history { height: clamp(140px, 26cqh, 300px); min-height: 0; overflow: auto; overflow-anchor: none; scrollbar-gutter: stable; }
+.investigation-log-history button[aria-pressed="true"] { outline: 1px solid #9be1db; outline-offset: -2px; }
+.terminal-panel .investigation-log-detail { min-height: 0; padding-top: 12px; border-top: 1px solid #47617e; margin-top: 12px; }
+.investigation-log-detail pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+.terminal-panel footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-top: 8px; }
+.investigation-table { overflow: auto; max-height: 38cqh; }
+.investigation-notes { overflow: auto; max-height: 44cqh; }
+.investigation-workspace { min-width: 0; }
+.investigation-workspace .task-chart { margin-block: 8px; }
+.investigation-workspace .task-chart > div { height: 135px; }

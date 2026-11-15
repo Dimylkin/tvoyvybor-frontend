@@ -1,0 +1,70 @@
+/* Themes are scoped to the existing phone, including its embedded apps. */
+.campus-phone {
+  --phone-bg: #f0f5f5; --phone-card: #fff; --phone-text: #183345; --phone-muted: #536f7d;
+  --phone-accent: #267c73; --phone-soft: #e0eeea; --phone-line: #cbdedb;
+  --phone-wallpaper: radial-gradient(ellipse at 80% 10%, #5ba6a875, transparent 55%), linear-gradient(155deg, #163750, #236d72 60%, #122b47);
+  --phone-home-text: #f3fcfa; --phone-icon: linear-gradient(140deg, #63bcae, #2d8d85);
+  background: var(--phone-bg); color: var(--phone-text); outline: none;
+}
+.campus-phone[data-theme='dark'] { --phone-bg: #14202c; --phone-card: #213140; --phone-text: #eef5fc; --phone-muted: #b3c7d5; --phone-accent: #8de2d3; --phone-soft: #2a414b; --phone-line: #405362; --phone-wallpaper: linear-gradient(150deg, #0e1724, #273a4b); --phone-icon: linear-gradient(140deg, #526578, #263b4d); }
+.campus-phone[data-theme='light'] { --phone-bg: #f6f7fc; --phone-card: #fff; --phone-text: #25314c; --phone-muted: #5c6881; --phone-accent: #485db0; --phone-soft: #e8ebf8; --phone-line: #d6dced; --phone-wallpaper: linear-gradient(140deg, #f8f6ff, #d5e4f5); --phone-home-text: #25314c; --phone-icon: linear-gradient(140deg, #8398de, #536cbd); }
+.campus-phone[data-theme='cyber'] { --phone-bg: #11162b; --phone-card: #1e2540; --phone-text: #e9faff; --phone-muted: #b5c5df; --phone-accent: #66f2d6; --phone-soft: #303451; --phone-line: #4b5678; --phone-wallpaper: radial-gradient(at 85% 15%, #773cab, transparent 60%), linear-gradient(150deg, #10283c, #18172f); --phone-icon: linear-gradient(140deg, #8761c9, #286c84); }
+.campus-phone[data-theme='pastel'] { --phone-bg: #faf1f5; --phone-card: #fffafd; --phone-text: #52394f; --phone-muted: #7b6276; --phone-accent: #8f4e80; --phone-soft: #f0e1ec; --phone-line: #e4ccde; --phone-wallpaper: linear-gradient(150deg, #f3dfec, #d8e8ed); --phone-home-text: #52394f; --phone-icon: linear-gradient(140deg, #bd8caf, #8f7aaf); }
+.campus-phone.phone-home-screen { background: var(--phone-wallpaper); color: var(--phone-home-text); }
+.campus-phone.phone-home-screen::before { background: none; }
+.campus-phone .phone-content { color: var(--phone-text); }
+.campus-phone .phone-status { height: 47px; padding-top: 5px; font-size: 11px; }
+.campus-phone .phone-status time { font-variant-numeric: tabular-nums; }
+.campus-phone .phone-home { padding: clamp(12px, 4cqh, 34px) 18px 16px; overflow-y: auto; }
+.campus-phone .phone-brand { margin: 0 0 clamp(20px, 4cqh, 36px); text-align: center; color: var(--phone-home-text); font-size: 22px; font-weight: 650; letter-spacing: -.04em; }
+.campus-phone .phone-grid { row-gap: clamp(12px, 3cqh, 24px); }
+.campus-phone .phone-app-icon { color: var(--phone-home-text); text-shadow: none; }
+.campus-phone .phone-icon { background: var(--phone-icon); }
+.campus-phone .phone-app-heading h2, .campus-phone .phone-embedded h1, .campus-phone .phone-embedded h2, .campus-phone .phone-embedded h3, .campus-phone .phone-contact-profile h2, .campus-phone .phone-player-card strong { color: var(--phone-text); }
+.campus-phone .phone-card, .campus-phone .phone-quest, .campus-phone .phone-contact-list, .campus-phone .phone-embedded .panel { background: var(--phone-card); border-color: var(--phone-line); color: var(--phone-text); }
+.campus-phone .phone-card p, .campus-phone .phone-quest-copy span, .campus-phone .phone-quest-copy small, .campus-phone .phone-contact small, .campus-phone .phone-contact-profile > p, .campus-phone .phone-player-card small, .campus-phone .phone-objectives small, .campus-phone .phone-meta, .campus-phone .phone-embedded p, .campus-phone .phone-embedded .muted, .campus-phone .phone-map-position { color: var(--phone-muted); }
+.campus-phone .phone-kicker, .campus-phone .phone-card-label, .campus-phone .phone-back, .campus-phone .phone-section-title { color: var(--phone-accent); }
+.campus-phone .phone-tabs, .campus-phone .phone-avatar, .campus-phone .phone-player-card, .campus-phone .phone-contact-portrait, .campus-phone .phone-quest-icon, .campus-phone .phone-award, .campus-phone .phone-tag, .campus-phone .phone-help kbd { background: var(--phone-soft); color: var(--phone-accent); }
+.campus-phone .phone-tabs button { color: var(--phone-muted); }
+.campus-phone .phone-tabs button[aria-pressed='true'] { background: var(--phone-card); color: var(--phone-accent); }
+.campus-phone .phone-contact-list .phone-contact { color: var(--phone-text); }
+.campus-phone .phone-contact-list .phone-contact:hover, .campus-phone .phone-quest:hover { background: var(--phone-soft); }
+.campus-phone .phone-contact-list .phone-contact + .phone-contact, .campus-phone .phone-objectives li, .campus-phone .phone-help > div + div { border-color: var(--phone-line); }
+.campus-phone .phone-actions button, .campus-phone .phone-alert button { background: var(--phone-accent); color: var(--phone-bg); }
+.campus-phone .phone-home-indicator { touch-action: none; }
+.campus-phone .phone-home-indicator::after { background: var(--phone-accent); }
+.campus-phone.phone-home-screen .phone-home-indicator::after { background: var(--phone-home-text); }
+.campus-phone { touch-action: pan-y; overscroll-behavior-x: contain; }
+.phone-backdrop .phone-device { width: min(320px, calc((100cqh - 3rem) * .49), 100%); }
+.campus-phone .phone-signout { width: 100%; margin-top: 24px; display: flex; gap: 8px; justify-content: center; align-items: center; padding: 12px; border: 1px solid var(--phone-line); background: var(--phone-soft); color: var(--phone-text); border-radius: 12px; }
+.phone-signout svg { width: 18px; height: 18px; }
+.campus-phone .phone-campus-map { position: relative; width: 100%; aspect-ratio: 4 / 3; border: 1px solid var(--phone-line); border-radius: 15px; overflow: hidden; }
+.phone-campus-tiles { display: grid; grid-template-columns: 1fr 1fr; width: 100%; height: 100%; }
+.phone-campus-tiles img { display: block; width: 100%; height: 100%; min-height: 0; }
+.phone-campus-map svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+.phone-campus-map text { fill: #fff; font: 700 30px system-ui; paint-order: stroke; stroke: #173849; stroke-width: 1px; }
+.map-building-dot { fill: #173849; stroke: white; stroke-width: 4px; }
+.map-player-halo { fill: #22c7f7; fill-opacity: .3; stroke: white; stroke-width: 3px; }
+.map-player-dot { fill: #08a9ef; stroke: #fff; stroke-width: 3px; }
+.phone-map-position { display: flex; align-items: center; gap: 6px; font-size: 10px; }
+.map-player-key { display: inline-block; flex-shrink: 0; width: 9px; height: 9px; background: #08a9ef; border: 1px solid white; border-radius: 50%; }
+.phone-map-legend { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 15px 0; font-size: 10px; }
+.phone-map-legend > div { display: flex; gap: 6px; align-items: center; }
+.phone-map-legend span { display: grid; place-items: center; width: 19px; height: 19px; border-radius: 50%; background: var(--phone-soft); color: var(--phone-accent); font-weight: 700; }
+.campus-phone .phone-theme-choice { display: flex; align-items: center; gap: 12px; width: 100%; text-align: left; padding: 10px; }
+.phone-theme-choice > span:last-child { margin-left: auto; color: var(--phone-accent); }
+.campus-phone .phone-theme-choice[aria-pressed='true'] { border-color: var(--phone-accent); outline: 1px solid var(--phone-accent); }
+.theme-swatch { width: 44px; height: 35px; border-radius: 9px; flex: none; border: 1px solid #ffffff50; }
+.swatch-campus { background: linear-gradient(140deg, #163750, #236d72); }.swatch-dark { background: linear-gradient(140deg, #0e1724, #526578); }.swatch-light { background: linear-gradient(140deg, #f8f6ff, #8398de); }.swatch-cyber { background: linear-gradient(140deg, #10283c, #773cab); }.swatch-pastel { background: linear-gradient(140deg, #f3dfec, #bd8caf); }
+.campus-phone progress { display: block; width: 100%; height: 7px; margin: 10px 0; border: 0; border-radius: 8px; overflow: hidden; accent-color: var(--phone-accent); background: var(--phone-soft); }
+.campus-phone progress::-webkit-progress-bar { background: var(--phone-soft); }.campus-phone progress::-webkit-progress-value { background: var(--phone-accent); }.campus-phone progress::-moz-progress-bar { background: var(--phone-accent); }
+.phone-stat-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; margin-top: 12px; text-align: center; }
+.phone-stat-grid b { display: block; font-size: 19px; }.phone-stat-grid small { display: block; color: var(--phone-muted); font-size: 9px; }
+.phone-direction > div { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }.phone-direction small { color: var(--phone-muted); font-size: 10px; }
+.phone-interest-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-block: 10px; }.phone-interest-chips > span { background: var(--phone-soft); color: var(--phone-accent); padding: 6px 8px; border-radius: 9px; font-size: 10px; }
+.phone-profile-history > summary, .phone-faq summary { cursor: pointer; font-weight: 650; }.phone-profile-history > summary { margin: 16px 0 10px; }
+.campus-phone .phone-help > div { align-items: center; }.campus-phone .phone-help span { font-size: 10px; text-align: right; }
+.campus-phone .phone-help kbd { white-space: nowrap; font-size: 9px; }
+.campus-phone .phone-alert { color: #e15b70; }
+.campus-phone button:focus-visible, .campus-phone summary:focus-visible { outline: 2px solid var(--phone-accent); outline-offset: 3px; }
+.campus-phone.phone-app-screen { background: var(--phone-bg); color: var(--phone-text); }
