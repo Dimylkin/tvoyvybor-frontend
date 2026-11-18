@@ -6,7 +6,7 @@ import { codeAnswers, debriefs, finalReactions, introductions, interestQuestions
 import { BackendGame } from './games/BackendGame'
 import { FrontendGame } from './games/FrontendGame'
 import { AnalyticsGame } from './games/AnalyticsGame'
-import { TaskStatus } from './TaskStatus'
+import { QuestCompleteBanner, TaskStatus } from './TaskStatus'
 import './task-ui.css'
 
 export interface GameProps { userId?: number, quest: Quest, send: (action: string, payload?: Record<string, unknown>) => Promise<void>, busy: boolean }
@@ -64,6 +64,27 @@ function useQuestAction(api: ApiClient, quest: Quest | undefined, reload: () => 
 interface Common { api: ApiClient, close: () => void, reload: () => Promise<void>, onAwards: (awards: Achievement[]) => void, userId: number }
 
 const interestChoices = [['more', 'Я бы ещё покопался в этом.'], ['interesting', 'Неплохо, было интересно.'], ['not-mine', 'Идею понял, но это не моё.'], ['enough', 'Нормально, но пока не уверен.']] as const
+
+const hintsByKind: Record<string, string[]> = {
+  diagnosis: ['Сверь время деплоя с первой ошибкой в журнале.', 'База отвечает; найди сервис, который обращается к полю total.', 'Сначала исправь причину ошибки, затем проверь соседние запросы.'],
+  responsive: ['Сравни ширину карточки с узким экраном.', 'Проверь, не расположены ли товары в один ряд без переноса.', 'Проверь, не закреплена ли кнопка поверх содержимого.'],
+  ux: ['Попроси виртуального пользователя пройти форму без подсказки.', 'Проверь подпись кнопки и сообщения после ошибки.', 'Посмотри, хватает ли человеку подсказки к паролю и контроля видимости.'],
+  interview: ['Сначала выясни, кто ждёт результат и к какому сроку.', 'Уточни, как сейчас собирают отчёт и какие поля нужны.', 'Сверь решение с повторяющейся ручной работой клиента.'],
+  data: ['Сравни число заказов со средним чеком.', 'Открой источник самой крупной операции.', 'Проверь, не попал ли внутренний платёж в обычный отчёт.'],
+  default: ['Проверь, что именно показывает результат действия.', 'Меняй по одному условию и сравнивай результат.', 'Используй журнал и документацию, чтобы проверить гипотезу.'],
+}
+
+function HintPanel({ kind, count, expanded, onToggle, onAsk, busy }: { kind: string, count: number, expanded: boolean, onToggle: () => void, onAsk: () => void, busy: boolean }) {
+  const hints = hintsByKind[kind] ?? hintsByKind.default
+  const shown = Math.min(count, hints.length)
+  return <section className={`hint-panel${expanded ? ' is-expanded' : ''}`} aria-label="Подсказки">
+    <button className="hint-panel-toggle" type="button" aria-expanded={expanded} onClick={onToggle}>Подсказки <span>{expanded ? '−' : '+'}</span></button>
+    {expanded && <div className="hint-panel-content">
+      {shown > 0 ? <><p className="hint-panel-count">Подсказка {shown} из {hints.length}</p><p>{hints[shown - 1]}</p>{shown > 1 && <details><summary>Предыдущие подсказки</summary><ol>{hints.slice(0, shown - 1).map((hint, index) => <li key={hint}>Подсказка {index + 1}: {hint}</li>)}</ol></details>}</> : <p>Сравни наблюдения и меняй по одной вещи. Подсказки не снижают оценку интереса.</p>}
+      {shown < hints.length && <button disabled={busy} type="button" onClick={onAsk}>{busy ? 'Сохраняем…' : 'Попросить подсказку'}</button>}
+    </div>}
+  </section>
+}
 
 export function QuestConversation({ api, quests, location, close, reload, onAwards, userId }: Common & { quests: Quest[], location: WorldLocation }) {
   const active = quests.filter(q => q.status === 'active')
@@ -128,10 +149,10 @@ export function QuestInteraction({ api, quest, close, reload, onAwards, userId, 
     <div className="task-body">
     {alternatives.length > 1 && <nav className="task-tabs" aria-label="Открыть задание">{alternatives.map(q => <button key={q.id} type="button" aria-pressed={q.id === quest?.id} onClick={() => selectQuest?.(q.id)}>{q.title}</button>)}</nav>}
     {!quest || !state ? <p>Выберите дело в телефоне → «Задачи» → «Начать задание».</p> : state.stage === 'intro' ? <p>Сначала поговорите с наставником: {quest.giver_npc_id === 'boris' ? 'Борисом' : quest.giver_npc_id === 'frontina' ? 'Фронтиной' : 'Анной'}.</p> : target === 'server' && quest.gameplay?.kind !== 'diagnosis' ? <><h3 className="task-success">API ● ONLINE</h3><p>Сервисы работают. Задача с функцией открывается на терминале за центральным столом.</p></> : target === 'server' ? <><h3 className={state.success ? 'task-success' : 'error'}>API {state.success ? '● ONLINE' : '● ERROR'}</h3><p>DATABASE ● ONLINE · CACHE ● ONLINE</p><p>{state.success ? 'Запросы снова проходят, индикатор зелёный.' : 'Красный индикатор только у API. За центральным столом терминал: там можно сравнить состояние сервисов и журнал.'}</p></> : state.stage === 'interaction' ? <><p>Инструменты готовы. Можно возвращаться к исследованию позже.</p><button type="button" disabled={busy} onClick={() => invoke('open')}>Начать работу на станции</button></> : <>
-      <div className="task-stage"><span>{state.stage === 'return' ? '✓ Проверка пройдена · вернитесь к NPC' : 'Исследование → гипотеза → проверка'}</span></div>
+      {state.stage === 'return' ? <QuestCompleteBanner npc={quest.giver_npc_id === 'boris' ? 'Борису Бэкендовичу' : quest.giver_npc_id === 'frontina' ? 'Фронтине Пиксельевне' : 'Анне Литиковой'} /> : <div className="task-stage"><span>Исследование → гипотеза → проверка</span></div>}
       {(state.stage === 'mini-game' || state.stage === 'return') && <fieldset className="task-workspace">{quest.gameplay?.kind === 'diagnosis' || quest.gameplay?.kind === 'code' ? <BackendGame userId={userId} quest={quest} send={send} busy={busy} /> : quest.gameplay?.kind === 'responsive' || quest.gameplay?.kind === 'ux' ? <FrontendGame userId={userId} quest={quest} send={send} busy={busy} /> : <AnalyticsGame quest={quest} send={send} busy={busy} />}</fieldset>}
       {state.stage === 'result' && <p>Наставник ждёт ваше впечатление. Вернитесь к нему.</p>}
-      <button type="button" hidden={state.stage !== 'mini-game' || quest.gameplay?.kind === 'code'} onClick={() => setHelp(!help)}>Подсказки {help ? '−' : '+'}</button>{help && quest.gameplay?.kind !== 'code' && <div className="task-card"><p>Наблюдайте, сравнивайте, меняйте по одной вещи и проверяйте результат. Подсказки не снижают оценку интереса.</p><button disabled={busy} type="button" onClick={() => invoke('hint')}>Попросить подсказку</button>{state.hints > 0 && <p>{quest.gameplay?.kind === 'diagnosis' ? 'Проверьте время деплоя и красную запись SyntaxError. База отвечает, поэтому начните с OrderService.' : quest.gameplay?.kind === 'responsive' ? 'Фиксированная ширина не помещается на мобильном экране. Проверьте также row и absolute.' : quest.gameplay?.kind === 'interview' ? 'Кто, зачем, какие данные, формат, боль и расписание — выясните их до предложения решения.' : quest.gameplay?.kind === 'data' ? 'Сравните число заказов и средний чек. В операциях ищите крупный внутренний источник.' : 'Запустите проверку и посмотрите, на каком шаге проблема. Документация и AI доступны в редакторе.'}</p>}</div>}
+      {state.stage === 'mini-game' && quest.gameplay?.kind !== 'code' && <HintPanel kind={quest.gameplay?.kind ?? ''} count={state.hints} expanded={help} onToggle={() => setHelp(value => !value)} onAsk={() => invoke('hint')} busy={busy} />}
     </>}
     </div>
     <TaskStatus state={state} kind={quest?.gameplay?.kind} busy={busy} error={error} />

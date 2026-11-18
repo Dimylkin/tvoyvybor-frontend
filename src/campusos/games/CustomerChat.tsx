@@ -16,11 +16,12 @@ export function CustomerChat({ quest, send, busy }: GameProps) {
   const [tab, setTab] = useState('chat')
   const [submittedAt, setSubmittedAt] = useState<number | null>(null)
   const [reply, setReply] = useState<string | null>(null)
+  const [mentorReply, setMentorReply] = useState(false)
   useEffect(() => {
     if (submittedAt !== null && state.attempts > submittedAt) {
-      setReply(state.feedback); setSubmittedAt(null)
+      setMentorReply(!state.success); setReply(state.success ? state.feedback : 'Смотри: заказчику всё ещё придётся собирать отчёт руками или ждать его. Давай ещё раз сверимся с перепиской.'); setSubmittedAt(null)
     }
-  }, [submittedAt, state.attempts, state.feedback])
+  }, [submittedAt, state.attempts, state.feedback, state.success])
   const [draft, setDraft] = useState<Record<string, string>>(state.proposal_draft ?? {})
   const [pending, setPending] = useState<string | null>(null)
   const [localHistory, setLocalHistory] = useState<string[]>(state.interview_history ?? (state.choices ?? []).filter(key => interviewQuestions.some(q => q[0] === key)))
@@ -39,6 +40,6 @@ export function CustomerChat({ quest, send, busy }: GameProps) {
       {localHistory.map((key, i) => { const row = interviewQuestions.find(q => q[0] === key); return row && <div key={i}><p className="chat-bubble chat-outgoing">{row[1]}</p><p className="chat-bubble">{row[2]}</p></div> })}
       {pending && <p role="status" className="chat-bubble">Михаил отвечает…</p>}
     </div><details open className="chat-questions"><summary>Задать вопрос</summary><div>{interviewQuestions.map(([key, text]) => <button type="button" key={key} disabled={busy || !!pending} onClick={() => { void ask(key) }}>{text}{localHistory.includes(key) ? ' ↺' : ''}</button>)}</div></details></section> : <article className="task-card solution-builder"><h3>Предложение клиенту</h3><p>Соберите свой вариант из того, что выяснили. Ответы остаются в переписке.</p>{blocks.map(([key, title, options]) => <label key={key}>{title}<select value={draft[key] ?? ''} onChange={event => setDraft(values => ({ ...values, [key]: event.target.value }))}>{options.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>)}<p className="solution-preview">{blocks.map(([key, , options]) => options.find(option => option[0] === draft[key])?.[1]).filter(Boolean).join(' → ') || 'Ваше решение появится здесь.'}</p><button type="button" disabled={busy || blocks.some(([key]) => !draft[key])} onClick={() => { setSubmittedAt(state.attempts); void send('compose', { value: JSON.stringify(draft) }).catch(() => setSubmittedAt(null)) }}>Обсудить решение</button></article>}
-    {reply && <div className="client-dialogue-backdrop"><Dialogue location={{ ...locationFor('analytics')!, name: 'Михаил · заказчик' }} onClose={() => setReply(null)} scene={{ text: reply, avatarLabel: 'М', choices: [{ text: state.success ? 'Договорились.' : 'Хорошо, пересмотрю решение.', select: () => { setReply(null); if (!state.success) setTab('chat') } }] }} /></div>}
+    {reply && <div className="client-dialogue-backdrop"><Dialogue location={mentorReply ? locationFor('analytics')! : { ...locationFor('analytics')!, name: 'Михаил · заказчик' }} onClose={() => setReply(null)} scene={{ text: reply, ...(!mentorReply ? { avatarLabel: 'М' as const } : {}), choices: [{ text: mentorReply ? 'Хорошо, пересмотрю решение.' : 'Договорились.', select: () => { setReply(null); if (mentorReply) setTab('chat') } }] }} /></div>}
   </div>
 }

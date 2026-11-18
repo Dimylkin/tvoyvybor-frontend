@@ -21,6 +21,21 @@
 .task-window .task-tabs { gap:8px; margin:0 0 12px; }
 .task-window .task-tabs button[aria-pressed=true] { background:#3a4b75; border-color:#879bdb; }
 .task-window .task-stage { margin:0 0 10px; font-size:12px; }
+.quest-complete-banner { display:flex; align-items:center; gap:12px; margin:0 0 12px; padding:12px 16px; border:1px solid #528b70; border-radius:12px; background:linear-gradient(100deg,#203e39,#23364a); color:#e5fff0; animation:quest-complete-in .24s ease-out both; }
+.quest-complete-banner>span { display:grid; flex:none; place-items:center; width:32px; height:32px; border-radius:50%; background:#80c9a2; color:#163a2b; font-size:20px; font-weight:800; }
+.quest-complete-banner strong,.quest-complete-banner small { display:block; }
+.quest-complete-banner strong { font-size:14px; }
+.quest-complete-banner small { margin-top:3px; color:#c1d9cb; }
+@keyframes quest-complete-in { from { opacity:0; transform:translateY(-4px) } to { opacity:1; transform:translateY(0) } }
+.hint-panel { margin-top:12px; border:1px solid var(--lab-line); border-radius:10px; background:var(--lab-panel); overflow:hidden; }
+.hint-panel-toggle { width:100%; display:flex; justify-content:space-between; align-items:center; background:transparent!important; text-align:left; }
+.hint-panel-content { padding:2px 14px 14px; color:var(--lab-text); }
+.hint-panel-content p { margin:8px 0; }
+.hint-panel-count { color:var(--lab-accent); font-size:12px; font-weight:700; }
+.hint-panel-content details { color:var(--lab-muted); font-size:12px; }
+.hint-panel-content details summary { cursor:pointer; }
+.hint-panel-content ol { padding-left:20px; }
+.hint-panel-content button { margin-top:8px; }
 .task-window .task-card { padding:14px; margin:12px 0; overflow:visible; }
 .task-window .task-card h3 { font-size:16px; margin:0 0 10px; }
 .task-window .task-card p { margin:8px 0; }
