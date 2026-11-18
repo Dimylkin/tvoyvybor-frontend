@@ -105,7 +105,7 @@ function AuthScreen({ register, onSubmit }: { register: boolean, onSubmit: (emai
   async function submit(event: React.SubmitEvent<HTMLFormElement>) {
     event.preventDefault(); setError(''); setBusy(true)
     try { await onSubmit(email, password, register) }
-    catch (cause) { setError(errorMessage(cause)) }
+    catch (cause) { setError(cause instanceof ApiError && cause.status === 401 ? 'Неверный адрес электронной почты или пароль.' : errorMessage(cause)) }
     finally { setBusy(false) }
   }
   return <main className="auth-layout">
@@ -158,7 +158,7 @@ function GameShell({ api, user, onOnboardingComplete, logout, directions, initia
     try { const raw = localStorage.getItem(`player_position_${user.id}`); const value = raw ? JSON.parse(raw) : null; const validScene = value?.scene === 'campus' ? value.x >= 0 && value.x <= 800 && value.y >= 0 && value.y <= 600 : ['narrator', 'backend', 'frontend', 'analytics'].includes(value?.scene) && value.x >= 0 && value.x <= 800 && value.y >= 0 && value.y <= 450; return value && validScene && Number.isFinite(value.x) && Number.isFinite(value.y) ? value as { scene: string, x: number, y: number } : null } catch { return null }
   }, [user.id])
   const savedBuilding = savedPosition && savedPosition.scene !== 'campus' ? savedPosition.scene === 'narrator' ? mainBuilding : directions.find(d => d.slug === savedPosition.scene) ?? null : null
-  const [building, setBuilding] = useState<Direction | null>(() => firstVisit ? mainBuilding : savedBuilding ?? (initialBuildingId === 'main' ? mainBuilding : directions.find((item) => item.id === initialBuildingId) ?? mainBuilding))
+  const [building, setBuilding] = useState<Direction | null>(() => firstVisit ? mainBuilding : savedBuilding ?? (initialBuildingId === 'main' ? mainBuilding : directions.find((item) => item.id === initialBuildingId) ?? null))
   const initialRouteProcessed = useRef(false)
   const lastRouteBuilding = useRef(initialBuildingId)
   const [dialogue, setDialogue] = useState(false); const [action, setAction] = useState<string | null>(null); const [transition, setTransition] = useState<'idle' | 'closing' | 'loading' | 'opening'>('idle'); const [fullscreen, setFullscreen] = useState(false); const shell = useRef<HTMLDivElement>(null)
@@ -209,7 +209,8 @@ function GameShell({ api, user, onOnboardingComplete, logout, directions, initia
       initialRouteProcessed.current = true
       if (firstVisit) setBuilding(mainBuilding)
       else if (savedBuilding) setBuilding(savedBuilding)
-      else setBuilding(mainBuilding)
+      else if (initialBuildingId !== null) setBuilding(initialBuildingId === 'main' ? mainBuilding : directions.find((item) => item.id === initialBuildingId) ?? mainBuilding)
+      else setBuilding(null)
       return
     }
     if (lastRouteBuilding.current !== initialBuildingId) {

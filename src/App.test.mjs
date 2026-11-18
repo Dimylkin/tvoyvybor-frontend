@@ -13,24 +13,53 @@ globalThis.sessionStorage = dom.window.sessionStorage
 globalThis.HTMLElement = dom.window.HTMLElement
 globalThis.MutationObserver = dom.window.MutationObserver
 globalThis.IS_REACT_ACT_ENVIRONMENT = true
+globalThis.__testCanvasReadyEnabled = true
+globalThis.__testCanvasReadyCallbacks = new Set()
 
 const { render, screen, fireEvent, waitFor, cleanup, act } = await import('@testing-library/react')
-const vite = await createServer({ server: { middlewareMode: true, hmr: false }, appType: 'custom' })
+function setCanvasReadySignal(enabled) {
+  globalThis.__testCanvasReadyEnabled = enabled
+  if (enabled) {
+    for (const notifyReady of globalThis.__testCanvasReadyCallbacks) notifyReady()
+    globalThis.__testCanvasReadyCallbacks.clear()
+  }
+}
+const canvasTestDouble = decodeURIComponent(new URL('./testCanvasMocks.tsx', import.meta.url).pathname)
+const vite = await createServer({
+  plugins: [{
+    name: 'app-canvas-test-doubles',
+    enforce: 'pre',
+    resolveId(source, importer) {
+      if (importer?.replaceAll('\\', '/').endsWith('/src/App.tsx') && ['./GameCanvas', './CampusCanvas'].includes(source)) {
+        return canvasTestDouble
+      }
+      return null
+    },
+  }],
+  server: { middlewareMode: true, hmr: false },
+  appType: 'custom',
+})
 const { default: App, Dialogue } = await vite.ssrLoadModule('/src/App.tsx')
 
-const user = { id: 1, email: 'player@example.com', role: 'user', onboarding_completed: true }
+const user = { id: 1, email: 'player@example.com', role: 'user', onboarding_completed: true, intro_completed: true, main_story_completed: false }
 const direction = { id: 3, slug: 'backend', title: 'Backend', description: 'Серверная разработка' }
 const scenario = { id: 7, direction_id: 3, slug: 'first', title: 'Первый сценарий', description: 'Проверка сервера', state: 'active' }
 
-function mockApi({ login = false, me = user, meStatus = 200, directions = [direction], scenarios = [scenario], progress = [{ scenario_id: 7, state: 'completed' }] } = {}) {
+function mockApi({ login = false, loginError = null, register = false, me = user, meStatus = 200, directions = [direction], scenarios = [scenario], progress = [{ scenario_id: 7, state: 'completed' }] } = {}) {
   const requests = []
   globalThis.fetch = async (input, init) => {
     const path = new URL(String(input), 'http://localhost:5173').pathname
     const authorization = new Headers(init?.headers).get('Authorization')
-    requests.push({ path, authorization })
-    if (path === '/api/auth/login' && login) return Response.json({ access_token: 'test-token', token_type: 'bearer' })
+    requests.push({ path, authorization, method: init?.method })
+    if (path === '/api/auth/register' && register) return Response.json(me)
+    if (path === '/api/auth/login') {
+      if (login) return Response.json({ access_token: 'test-token', token_type: 'bearer' })
+      if (loginError) return Response.json({ detail: loginError }, { status: 401 })
+    }
     if (path === '/api/auth/me') return meStatus === 401 ? Response.json({ detail: 'Invalid authentication credentials' }, { status: 401 }) : Response.json(me)
     if (path === '/api/quests') return Response.json([])
+    if (path === '/api/game/state') return Response.json({ intro_completed: me.intro_completed ?? true, final_quest_unlocked: false, final_quest_completed: me.main_story_completed ?? false, main_story_completed: me.main_story_completed ?? false })
+    if (path === '/api/game/intro-complete') return Response.json({ intro_completed: true, final_quest_unlocked: false, final_quest_completed: false, main_story_completed: false })
     if (path === '/api/directions') return Response.json(directions)
     if (path === '/api/scenarios') return Response.json(scenarios)
     if (path === '/api/progress') return Response.json(progress)
@@ -41,6 +70,8 @@ function mockApi({ login = false, me = user, meStatus = 200, directions = [direc
 
 afterEach(() => {
   cleanup()
+  setCanvasReadySignal(true)
+  globalThis.sessionStorage = window.sessionStorage
   localStorage.clear()
   window.location.hash = ''
 })
@@ -62,6 +93,42 @@ test('login opens the compact campus game shell without loading scenarios', asyn
   assert.ok(!requests.some((request) => request.path === '/api/progress'))
 })
 
+test('registering a new player on /register opens the prologue in the campus hub', async () => {
+  window.location.hash = '/register'
+  const requests = mockApi({ login: true, register: true, me: { ...user, onboarding_completed: false, intro_completed: false }, directions: [] })
+  setCanvasReadySignal(false)
+  render(React.createElement(App))
+  fireEvent.change(screen.getByLabelText('Электронная почта'), { target: { value: 'new-player@example.com' } })
+  fireEvent.change(screen.getByLabelText('Пароль'), { target: { value: 'password123' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Зарегистрироваться' }))
+
+  assert.ok(await screen.findByLabelText('Игровая сцена'))
+  assert.equal(screen.queryByRole('dialog', { name: 'Разговор: Дядя Дебаг' }), null)
+  act(() => setCanvasReadySignal(true))
+  assert.ok(await screen.findByRole('dialog', { name: 'Разговор: Дядя Дебаг' }))
+  for (let step = 0; step < 5; step++) {
+    const choice = screen.getByRole('dialog').querySelector('button')
+    assert.ok(choice)
+    fireEvent.click(choice)
+    fireEvent.keyDown(window, { code: 'Space', key: ' ' })
+  }
+  await waitFor(() => assert.ok(!screen.queryByRole('dialog', { name: 'Разговор: Дядя Дебаг' })))
+  assert.ok(requests.some((request) => request.path === '/api/game/intro-complete' && request.method === 'PUT'))
+  fireEvent.click(screen.getByRole('button', { name: 'Телефон · Tab' }))
+  assert.ok(screen.getByRole('dialog', { name: 'CampusOS' }))
+})
+
+test('invalid login credentials show an authentication error instead of an expired-session message', async () => {
+  mockApi({ loginError: 'Invalid credentials' })
+  render(React.createElement(App))
+  fireEvent.change(screen.getByLabelText('Электронная почта'), { target: { value: 'player@example.com' } })
+  fireEvent.change(screen.getByLabelText('Пароль'), { target: { value: 'wrong-password' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Войти' }))
+
+  const alert = await screen.findByRole('alert')
+  assert.equal(alert.textContent, 'Неверный адрес электронной почты или пароль.')
+})
+
 test('saved token restores the session and server status after remount', async () => {
   localStorage.setItem('tvoyvybor.accessToken', 'saved-token')
   window.location.hash = '/hub'
@@ -76,18 +143,26 @@ test('saved token restores the session and server status after remount', async (
 test('a new player starts in the main building and remains there after the prologue', async () => {
   localStorage.setItem('tvoyvybor.accessToken', 'saved-token')
   window.location.hash = '/hub'
-  mockApi({ me: { ...user, onboarding_completed: false }, directions: [] })
+  mockApi({ me: { ...user, onboarding_completed: false, intro_completed: false }, directions: [] })
   const fetchApi = globalThis.fetch
-  globalThis.fetch = async (input, init) => new URL(String(input), 'http://localhost:5173').pathname === '/api/auth/me/onboarding-complete'
-    ? Response.json(user) : fetchApi(input, init)
+  globalThis.fetch = async (input, init) => new URL(String(input), 'http://localhost:5173').pathname === '/api/game/intro-complete'
+    ? Response.json({ intro_completed: true, final_quest_unlocked: false, final_quest_completed: false, main_story_completed: false }) : fetchApi(input, init)
   render(React.createElement(App))
 
   assert.ok(await screen.findByLabelText('Игровая сцена'))
-  assert.ok(screen.getByRole('dialog', { name: 'Пролог Дяди Дебага' }))
-  fireEvent.click(screen.getByRole('button', { name: 'Продолжить' }))
-  await waitFor(() => assert.ok(!screen.queryByRole('dialog', { name: 'Пролог Дяди Дебага' })))
+  assert.ok(await screen.findByRole('dialog', { name: 'Разговор: Дядя Дебаг' }))
+  for (let step = 0; step < 5; step++) {
+    const choice = screen.getByRole('dialog').querySelector('button')
+    assert.ok(choice)
+    fireEvent.click(choice)
+    fireEvent.keyDown(window, { code: 'Space', key: ' ' })
+  }
+  await waitFor(() => assert.ok(!screen.queryByRole('dialog', { name: 'Разговор: Дядя Дебаг' })))
   assert.ok(screen.getByLabelText('Игровая сцена'))
   assert.equal(screen.queryByLabelText('Игровой кампус'), null)
+  act(() => setCanvasReadySignal(true))
+  fireEvent.click(screen.getByRole('button', { name: 'Телефон · Tab' }))
+  assert.ok(screen.getByRole('dialog', { name: 'CampusOS' }))
 })
 
 test('the main building route restores its interior for an existing player', async () => {
@@ -275,6 +350,27 @@ test('game interaction retries an uncertain delivery using the same operation id
   assert.equal(ids.length, 2)
   assert.equal(ids[0], ids[1])
   sessionStorage.clear()
+})
+
+test('game interaction stays retryable when session storage is unavailable', async () => {
+  const { QuestInteraction } = await vite.ssrLoadModule('/src/campusos/QuestInteraction.tsx')
+  globalThis.sessionStorage = {
+    getItem() { throw new DOMException('Storage disabled', 'SecurityError') },
+    setItem() { throw new DOMException('Storage disabled', 'SecurityError') },
+    removeItem() { throw new DOMException('Storage disabled', 'SecurityError') },
+  }
+  const ids = []
+  const api = { questAction: async (_quest, id) => { ids.push(id); if (ids.length === 1) throw new Error('offline'); return { state: {}, awards: [] } } }
+  const quest = { id: 1, slug: 'server-on-vacation', title: 'Сервер', description: '', category: 'professional', location_slug: 'backend', giver_npc_id: 'boris', status: 'active', accepted_at: null, completed_at: null, tracked: false, gameplay: { kind: 'diagnosis', state: { stage: 'interaction' } }, objectives: [] }
+  render(React.createElement(QuestInteraction, { api, quest, target: 'terminal', reload: async () => {}, close: () => {}, onAwards: () => {}, userId: 91 }))
+
+  fireEvent.click(screen.getByRole('button', { name: 'Начать работу на станции' }))
+  assert.ok(await screen.findByRole('alert'))
+  fireEvent.click(screen.getByRole('button', { name: 'Начать работу на станции' }))
+  await waitFor(() => assert.equal(screen.queryByRole('alert'), null))
+  assert.equal(ids.length, 2)
+  assert.equal(ids[0], ids[1])
+  globalThis.sessionStorage = window.sessionStorage
 })
 
 test('retry keeps the operation id when refreshing the journal fails', async () => {
