@@ -1,20 +1,35 @@
-name: CI
+name: Frontend CI
 
 on:
   push:
+    branches:
+      - dev
   pull_request:
+    branches:
+      - dev
+
+permissions:
+  contents: read
 
 jobs:
   frontend:
+    name: Lint, types, tests, build
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
           cache: npm
-      - run: npm ci
-      - run: npm run lint
-      - run: npm run typecheck
-      - run: npm test
-      - run: npm run build
+          cache-dependency-path: package-lock.json
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Lint
+        run: make lint
+      - name: Typecheck
+        run: make typecheck
+      - name: Unit and UI tests
+        run: make test
+      - name: Production build
+        run: make build
