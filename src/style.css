@@ -172,7 +172,7 @@ kbd { border: 1px solid #5a6b89; border-radius: .25rem; padding: .05rem .3rem; b
 .phone-contact-list .phone-contact + .phone-contact { border-top: 1px solid #e4eded; }.phone-contact-list .phone-contact:hover { background: #f5faf8; }
 .phone-avatar { overflow: hidden; width: 43px; height: 43px; }.phone-avatar img { width: 100%; height: 100%; object-fit: cover; object-position: center top; }.phone-contact-chevron { margin-left: auto; color: #81989f; font-size: 20px; }
 .phone-contact-profile { text-align: center; }.phone-contact-profile h2 { margin: 12px 0 8px; color: #172e41; font-size: 20px; letter-spacing: -.03em; }.phone-contact-profile > p { margin: 16px 6px 0; color: #486576; font-size: 12px; line-height: 1.55; }.phone-contact-portrait { overflow: hidden; width: 148px; height: 165px; margin: 8px auto 0; border-radius: 24px; background: linear-gradient(150deg, #dcefe9, #c7dfe3); }.phone-contact-portrait img { width: 100%; height: 100%; object-fit: contain; object-position: center bottom; }
-.phone-player-card { display: flex; align-items: center; gap: 12px; margin-bottom: 15px; padding: 10px 12px; border-radius: 15px; background: linear-gradient(135deg, #dff2ea, #e8f2f5); }.phone-player-card img { flex: none; width: 64px; height: 64px; object-fit: contain; }.phone-player-card strong, .phone-player-card small { display: block; }.phone-player-card strong { margin: 3px 0; color: #173c42; font-size: 15px; }.phone-player-card small { overflow-wrap: anywhere; color: #526f79; font-size: 10px; }
+.phone-player-card { display: flex; align-items: center; gap: 12px; margin-bottom: 15px; padding: 10px 12px; border-radius: 15px; background: linear-gradient(135deg, #dff2ea, #e8f2f5); }.phone-player-card img { flex: none; width: 64px; height: 64px; object-fit: contain; }.phone-player-card strong, .phone-player-card small { display: block; }.phone-player-card strong { margin: 3px 0; color: #173c42; font-size: 15px; }.phone-player-card small { max-width: 100%; overflow: hidden; color: #526f79; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
 
 /* Campus Lab: shared workbench, previews, investigation and result states. */
 .task-backdrop { z-index: 45; padding: 24px; }
@@ -229,8 +229,11 @@ kbd { border: 1px solid #5a6b89; border-radius: .25rem; padding: .05rem .3rem; b
 .task-chart button span { position: absolute; top: -25px; left: 0; right: 0; color: #d8f6f1; }
 .task-chart button small { position: absolute; bottom: -24px; left: 0; right: 0; color: #a6b8d2; }
 .task-chart { padding-bottom: 40px; }
-.quest-award-toast { position: absolute; top: 26px; left: 50%; transform: translateX(-50%); z-index: 90; background: #25483ff2; border: 1px solid #87dbb4; color: #dcffee; border-radius: 12px; padding: 14px 24px; pointer-events: none; box-shadow: 0 8px 24px #0004; }
-.quest-award-toast small { display: block; font-size: 12px; margin-top: 5px; }
+.quest-award-toast { position:absolute; top:20px; left:50%; transform:translateX(-50%); z-index:90; display:grid; gap:10px; width:min(420px,calc(100% - 32px)); max-height:min(32vh,280px); overflow:auto; padding:14px 18px; border:1px solid #87dbb4; border-radius:14px; background:#25483ff2; color:#dcffee; pointer-events:none; box-shadow:0 8px 24px #0004; }
+.quest-award-item { display:grid; gap:4px; }
+.quest-award-label { color:#a6ebc3; font-size:11px; font-weight:800; letter-spacing:.04em; }
+.quest-award-item strong { font-size:15px; }
+.quest-award-toast small { display:block; margin-top:2px; font-size:12px; line-height:1.4; }
 .task-backdrop .dialogue-interface { position: fixed; z-index: 80; }
 @media (max-width: 760px) { .task-split { grid-template-columns: 1fr; } .task-header { align-items: flex-start; } .task-backdrop { padding: 8px; } .task-window { padding: 16px; max-height: 96vh; } }
 
