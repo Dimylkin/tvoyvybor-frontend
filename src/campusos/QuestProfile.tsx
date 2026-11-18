@@ -9,6 +9,7 @@ export function QuestProfile({ quests }: { quests: Quest[] }) {
   const started = games.filter(q => q.accepted_at)
   const completed = games.filter(q => q.status === 'completed')
   const interested = completed.filter(q => ['more', 'interesting'].includes(q.gameplay!.state.reaction ?? ''))
+  const tried = [...new Set(started.map(q => activities[q.gameplay!.kind] ?? q.title))]
   const positiveDirections = Object.keys(directionNames).filter(slug => interested.some(q => q.location_slug === slug))
   const untried = Object.keys(directionNames).filter(slug => !completed.some(q => q.location_slug === slug))
   const suggested = positiveDirections.length ? positiveDirections : untried
@@ -18,7 +19,10 @@ export function QuestProfile({ quests }: { quests: Quest[] }) {
   return <><div className="phone-app-heading"><h2>Профиль</h2></div>
     <article className="phone-card"><span className="phone-card-label">ОБЩИЙ ПРОГРЕСС</span><strong>{completed.length} из {games.length} ситуаций завершено</strong><progress aria-label="Общий прогресс" value={completed.length} max={Math.max(1, games.length)} /><div className="phone-stat-grid"><div><b>{started.length}</b><small>начато</small></div><div><b>{Math.floor(seconds / 60)}</b><small>минут в работе</small></div><div><b>{attempts}</b><small>проверок и решений</small></div></div></article>
     <h3 className="phone-section-title">Что тебе особенно нравится</h3>
-    {interested.length ? <div className="phone-interest-chips">{interested.map(q => <span key={q.id}>✦ {activities[q.gameplay!.kind] ?? q.title}</span>)}</div> : <article className="phone-card"><p>После первых дел поделитесь впечатлением с наставником — здесь появятся занятия, которые вам откликнулись.</p></article>}
+    {interested.length ? <div className="phone-interest-chips">{interested.map(q => <span key={q.id}>✦ {activities[q.gameplay!.kind] ?? q.title}</span>)}</div> : <article className="phone-card"><p>{completed.length === 0 ? 'Пока данных маловато для вывода. Попробуй несколько направлений и отметь впечатление у наставника.' : 'Пока не выделилось явного фаворита. Это тоже полезное наблюдение.'}</p></article>}
+    <h3 className="phone-section-title">Уже попробовал</h3>
+    {tried.length ? <div className="phone-interest-chips">{tried.map(activity => <span key={activity}>{activity}</span>)}</div> : <article className="phone-card"><p>Здесь появятся первые занятия после начала заданий.</p></article>}
+    {completed.length > 0 && completed.length < games.length && <p className="phone-profile-observation">Профиль предварительный: завершено {completed.length} из {games.length}. Он будет обновляться по мере новых впечатлений.</p>}
     <h3 className="phone-section-title">Направления</h3>
     {Object.entries(directionNames).map(([slug, title]) => {
       const entries = games.filter(q => q.location_slug === slug)

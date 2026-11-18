@@ -243,6 +243,9 @@ test('opening phone preserves the building scene and allows keyboard navigation'
   fireEvent.click(screen.getByRole('button', { name: 'Справка' }))
   assert.ok(screen.getByRole('heading', { name: 'Справка' }))
   fireEvent.keyDown(window, { key: 'Escape' })
+  assert.ok(screen.getByRole('dialog', { name: 'CampusOS' }))
+  assert.ok(screen.getByRole('heading', { name: 'CampusOS' }))
+  fireEvent.keyDown(window, { key: 'Escape' })
   assert.equal(screen.queryByRole('dialog', { name: 'CampusOS' }), null)
   assert.equal(screen.getByLabelText('Игровая сцена'), scene)
 })
@@ -416,7 +419,7 @@ test('game controls stay visible on hover and hide after the pointer leaves', as
   assert.ok(area.classList.contains('is-visible'))
 })
 
-test('contacts open a character card and only Escape dismisses the phone', async () => {
+test('contacts open a character card and Escape dismisses the phone from home', async () => {
   const { CampusPhone } = await vite.ssrLoadModule('/src/campusos/CampusPhone.tsx')
   let closed = 0
   render(React.createElement(CampusPhone, { api: {}, user, quests: [], loading: false, loadError: '', reload: async () => {}, close: () => { closed++ }, logout: () => {}, profile: null, results: null }))
@@ -812,6 +815,9 @@ test('phone gestures go back from nested screens and swipe home without dismissi
   fireEvent.keyDown(window, { key: 'Escape', repeat: true })
   assert.equal(closed, 0)
   fireEvent.keyDown(window, { key: 'Escape' })
+  assert.equal(closed, 0)
+  assert.ok(screen.getByRole('heading', { name: 'CampusOS' }))
+  fireEvent.keyDown(window, { key: 'Escape' })
   assert.equal(closed, 1)
 })
 
@@ -821,10 +827,25 @@ test('phone profile combines statistics, activities and recommendations without 
   render(React.createElement(QuestProfile, { quests: [q] }))
   assert.ok(screen.getByRole('progressbar', { name: 'Общий прогресс' }))
   assert.ok(screen.getByText('1 из 1 ситуаций завершено'))
-  assert.ok(screen.getByText(/Искать причины проблем/))
+  assert.ok(screen.getAllByText(/Искать причины проблем/).length >= 1)
   assert.ok(screen.getByText(/СТОИТ ПОДРОБНЕЕ ПОПРОБОВАТЬ/))
   assert.ok(screen.getByText(/ЧЕМУ УДЕЛИТЬ ВРЕМЯ/))
   assert.doesNotMatch(document.body.textContent, /% подходит/)
+})
+
+test('empty phone profile stays tentative when no tasks have been tried', async () => {
+  const { QuestProfile } = await vite.ssrLoadModule('/src/campusos/QuestProfile.tsx')
+  render(React.createElement(QuestProfile, { quests: [] }))
+  assert.ok(screen.getByText('0 из 0 ситуаций завершено'))
+  assert.ok(screen.getByText(/Пока данных маловато для вывода/))
+  assert.ok(screen.getByText('Здесь появятся первые занятия после начала заданий.'))
+})
+
+test('quest completion feedback tells the player which mentor to return to', async () => {
+  const { QuestCompleteBanner } = await vite.ssrLoadModule('/src/campusos/TaskStatus.tsx')
+  render(React.createElement(QuestCompleteBanner, { npc: 'Анне Литиковой' }))
+  assert.ok(screen.getByRole('status').textContent.includes('Задание выполнено'))
+  assert.ok(screen.getByRole('status').textContent.includes('Вернитесь к Анне Литиковой'))
 })
 
 test('phone clock follows browser local time and stops its timer on unmount', async t => {
@@ -939,16 +960,16 @@ test('every quest greets the player with a visible response and uses a distinct 
   assert.equal(seen.size, 18)
 })
 
-test('wrong interview proposal is spoken by the customer and dismissing returns to the chat', async () => {
+test('wrong interview proposal is explained by Anna and returns to the chat', async () => {
   const { AnalyticsGame } = await vite.ssrLoadModule('/src/campusos/games/AnalyticsGame.tsx')
-  const feedback = 'Мне всё ещё придётся собирать отчёт руками или ждать его. Давайте сверим решение с перепиской.'
+  const feedback = 'Смотри: заказчику всё ещё придётся собирать отчёт руками или ждать его. Давай ещё раз сверимся с перепиской.'
   let view
   const props = { quest: gameQuest('interview'), busy: false, send: async () => view.rerender(React.createElement(AnalyticsGame, { ...props, quest: gameQuest('interview', { attempts: 1, feedback, proposal_draft: { problem: 'manual' } }) })) }
   view = render(React.createElement(AnalyticsGame, props))
   fireEvent.click(screen.getByText('Собрать решение'))
   for (const [label, value] of [['Что мешает клиенту?', 'manual'], ['Что изменим?', 'export'], ['Что попадёт в файл?', 'paid-csv'], ['Как доставим результат?', 'friday-director']]) fireEvent.change(screen.getByLabelText(label), { target: { value } })
   fireEvent.click(screen.getByText('Обсудить решение'))
-  const dialog = await screen.findByRole('dialog', { name: 'Разговор: Михаил · заказчик' })
+  const dialog = await screen.findByRole('dialog', { name: 'Разговор: Анна Литикова' })
   assert.ok(dialog.textContent.includes(feedback))
   fireEvent.click(screen.getByText('Хорошо, пересмотрю решение.'))
   assert.equal(screen.queryByRole('dialog'), null)
