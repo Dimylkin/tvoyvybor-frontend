@@ -65,6 +65,24 @@ interface Common { api: ApiClient, close: () => void, reload: () => Promise<void
 
 const interestChoices = [['more', 'Я бы ещё покопался в этом.'], ['interesting', 'Неплохо, было интересно.'], ['not-mine', 'Идею понял, но это не моё.'], ['enough', 'Нормально, но пока не уверен.']] as const
 
+const smallTalk = {
+  analytics: {
+    prompt: 'Привет. Осваиваешься?',
+    replies: ['Да, понемногу.', 'Пока разбираюсь.', 'Да. Тут гораздо больше всего, чем я ожидал.'],
+    reactions: ['Хорошо. Если цифры начнут вести себя подозрительно — зови.', 'Понимаю. Я обычно начинаю с уточнения: что именно пока непонятно?', 'Это наблюдение или уже гипотеза? Ладно, пока просто освоимся.'],
+  },
+  backend: {
+    prompt: 'Привет. Уже успел заглянуть в серверную?',
+    replies: ['Пока только осматриваюсь.', 'Да. Логи выглядят почти дружелюбно.', 'Ещё нет. С чего тут обычно начинают?'],
+    reactions: ['Нормальный порядок. Сначала понять, где стоишь, потом трогать прод.', '«Почти» — хорошая оценка для логов. Рад, что познакомились.', 'С простого вопроса и спокойного взгляда на систему. Пойдём без героизма.'],
+  },
+  frontend: {
+    prompt: 'Привет! Как тебе кампус — уже нашёл что-нибудь красивое?',
+    replies: ['Пока осматриваюсь.', 'Нашёл. Теперь хочется поправить пару отступов.', 'Пока больше смотрю, чем трогаю.'],
+    reactions: ['Отличный первый шаг. Сначала композиция, потом пиксели.', 'Вот так и начинается: «пара отступов» — и внезапно новый макет.', 'Тоже хороший режим. Интерфейс сначала стоит рассмотреть целиком.'],
+  },
+} as const
+
 const hintsByKind: Record<string, string[]> = {
   diagnosis: ['Сверь время деплоя с первой ошибкой в журнале.', 'База отвечает; найди сервис, который обращается к полю total.', 'Сначала исправь причину ошибки, затем проверь соседние запросы.'],
   responsive: ['Сравни ширину карточки с узким экраном.', 'Проверь, не расположены ли товары в один ряд без переноса.', 'Проверь, не закреплена ли кнопка поверх содержимого.'],
@@ -92,6 +110,7 @@ export function QuestConversation({ api, quests, location, close, reload, onAwar
   const [topics, setTopics] = useState(false)
   const [greeted, setGreeted] = useState(false)
   const [greetingReply, setGreetingReply] = useState<string | null>(null)
+  const [greetingReplyIndex, setGreetingReplyIndex] = useState<number | null>(null)
   const [deferred, setDeferred] = useState(false)
   const [farewell, setFarewell] = useState<{ text: string, emotion: 'friendly' | 'thinking' | 'sad' } | null>(null)
   const [reactionLine, setReactionLine] = useState<{ value: string, text: string } | null>(null)
@@ -103,8 +122,15 @@ export function QuestConversation({ api, quests, location, close, reload, onAwar
   if (farewell) return <Dialogue location={location} onClose={close} scene={{ ...farewell, choices: [{ text: 'До встречи!', select: close }], advance: close }} />
   if (deferred) return <Dialogue location={location} onClose={close} scene={{ text: 'Эх… ладно. Если передумаешь — я здесь.', emotion: 'sad', choices: [{ text: 'До встречи!', select: close }], advance: close }} />
   if (!greeted && (!quest?.gameplay || quest.gameplay.state.stage === 'intro' && !quest.gameplay.state.intro_line)) {
+    const greeting = smallTalk[location.slug as keyof typeof smallTalk] ?? smallTalk.analytics
     if (greetingReply) return <Dialogue location={location} onClose={close} scene={{ text: greetingReply, speaker: 'player', choices: [], advance: () => setGreeted(true) }} />
-    return <Dialogue location={location} onClose={close} scene={{ text: location.slug === 'analytics' ? 'Привет. Осваиваешься?' : 'О, привет! Как дела?', emotion: 'friendly', canExit: true, choices: ['Привет! Нормально.', 'Нормально. Что случилось?'].map(text => ({ text, select: () => setGreetingReply(text) })) }} />
+    return <Dialogue location={location} onClose={close} scene={{ text: greeting.prompt, emotion: 'friendly', canExit: true, choices: greeting.replies.map((text, index) => ({ text, select: () => { setGreetingReply(text); setGreetingReplyIndex(index) } })) }} />
+  }
+  if (greetingReply && greeted) {
+    const greeting = smallTalk[location.slug as keyof typeof smallTalk] ?? smallTalk.analytics
+    const reaction = greeting.reactions[greetingReplyIndex ?? 0]
+    const next = quest?.gameplay?.state.stage === 'intro' ? 'К делу' : 'Выбрать тему'
+    return <Dialogue location={location} onClose={close} scene={{ text: reaction, emotion: 'thinking', canExit: true, choices: [{ text: next, select: () => { setGreetingReply(null); if (!quest?.gameplay) setTopics(true) } }] }} />
   }
   if (!quest?.gameplay) return <Dialogue location={location} onClose={close} scene={{ text: 'Есть минутка поболтать?', emotion: 'friendly', canExit: true, choices: [{ text: 'Как тебе здесь работается?', select: () => setTopics(true) }] }} />
   const state = quest.gameplay.state
