@@ -63,6 +63,7 @@
 .phone-stat-grid b { display: block; font-size: 19px; }.phone-stat-grid small { display: block; color: var(--phone-muted); font-size: 9px; }
 .phone-direction > div { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }.phone-direction small { color: var(--phone-muted); font-size: 10px; }
 .phone-interest-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-block: 10px; }.phone-interest-chips > span { background: var(--phone-soft); color: var(--phone-accent); padding: 6px 8px; border-radius: 9px; font-size: 10px; }
+.phone-profile-groups { display: grid; gap: 8px; }.phone-interest-group { border-inline-start: 3px solid var(--phone-accent); }.phone-interest-group p, .phone-profile-note { color: var(--phone-muted); }.phone-interest-group small { color: var(--phone-accent); font-size: 10px; }.phone-profile-note { display: block; margin: 10px 2px; line-height: 1.5; }
 .phone-profile-history > summary, .phone-faq summary { cursor: pointer; font-weight: 650; }.phone-profile-history > summary { margin: 16px 0 10px; }
 .campus-phone .phone-help > div { align-items: center; }.campus-phone .phone-help span { font-size: 10px; text-align: right; }
 .campus-phone .phone-help kbd { white-space: nowrap; font-size: 9px; }
