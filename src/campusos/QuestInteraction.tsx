@@ -116,7 +116,7 @@ export function QuestConversation({ api, quests, location, close, reload, onAwar
   const [reactionLine, setReactionLine] = useState<{ value: string, text: string } | null>(null)
   const quest = active.find(q => q.id === selectedId) ?? active.find(q => q.tracked) ?? active[0]
   const { send, busy, error } = useQuestAction(api, quest, reload, onAwards, userId)
-  if (topics) return <Dialogue location={location} onClose={close} onBack={() => setTopics(false)} />
+  if (topics) return <Dialogue location={location} onClose={close} onBack={quest?.gameplay ? () => setTopics(false) : undefined} />
   const invoke = (action: string, payload?: Record<string, unknown>) => { void send(action, payload).catch(() => {}) }
   const alternatives = active.length > 1 ? active.filter(q => q.id !== quest?.id).map(q => ({ text: `Продолжить «${q.title}»`, select: () => setSelectedId(q.id) })) : []
   if (farewell) return <Dialogue location={location} onClose={close} scene={{ ...farewell, choices: [{ text: 'До встречи!', select: close }], advance: close }} />
@@ -132,7 +132,7 @@ export function QuestConversation({ api, quests, location, close, reload, onAwar
     const next = quest?.gameplay?.state.stage === 'intro' ? 'К делу' : 'Выбрать тему'
     return <Dialogue location={location} onClose={close} scene={{ text: reaction, emotion: 'thinking', canExit: true, choices: [{ text: next, select: () => { setGreetingReply(null); if (!quest?.gameplay) setTopics(true) } }] }} />
   }
-  if (!quest?.gameplay) return <Dialogue location={location} onClose={close} scene={{ text: 'Есть минутка поболтать?', emotion: 'friendly', canExit: true, choices: [{ text: 'Как тебе здесь работается?', select: () => setTopics(true) }] }} />
+  if (!quest?.gameplay) return <Dialogue location={location} onClose={close} />
   const state = quest.gameplay.state
   const kind = quest.gameplay.kind
   if (state.stage === 'intro' || state.stage === 'return') {

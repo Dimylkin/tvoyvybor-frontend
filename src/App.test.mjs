@@ -550,6 +550,12 @@ test('ordinary NPC small talk is character-specific and opens profession topics 
     fireEvent.click(screen.getByText('Выбрать тему'))
     assert.ok(screen.getByText(location.greeting))
     assert.ok(screen.getByText(location.choices[0].text))
+    fireEvent.click(screen.getByText(location.choices[0].text))
+    fireEvent.keyDown(window, { key: 'Enter' })
+    assert.ok(screen.getByText(location.choices[0].reaction))
+    fireEvent.click(screen.getByText('Выбрать другую тему'))
+    assert.ok(screen.getByText(location.greeting))
+    assert.equal(screen.queryByText('Есть минутка поболтать?'), null)
     view.unmount()
   }
 })
