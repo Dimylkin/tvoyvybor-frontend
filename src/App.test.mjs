@@ -988,6 +988,18 @@ test('task status always has a separate frame slot and assistant has no duplicat
   assert.equal(status.getAttribute('data-tone'), 'info')
 })
 
+test('non-code games share one nearby, accessible hint disclosure', async () => {
+  const { QuestInteraction } = await vite.ssrLoadModule('/src/campusos/QuestInteraction.tsx')
+  render(React.createElement(QuestInteraction, { api: {}, quest: gameQuest('diagnosis'), userId: 503, close: () => {}, reload: async () => {}, onAwards: () => {}, target: 'terminal' }))
+  const toggle = screen.getByRole('button', { name: /Подсказки/ })
+  assert.equal(toggle.getAttribute('aria-expanded'), 'false')
+  assert.ok(toggle.compareDocumentPosition(document.querySelector('.task-workspace')) & 4)
+  fireEvent.click(toggle)
+  assert.equal(toggle.getAttribute('aria-expanded'), 'true')
+  assert.ok(screen.getByRole('region', { name: 'Подсказки' }))
+  assert.ok(screen.getByRole('button', { name: 'Попросить подсказку' }))
+})
+
 test('task feedback distinguishes warnings, failures and successful completion', async () => {
   const { TaskStatus } = await vite.ssrLoadModule('/src/campusos/TaskStatus.tsx')
   const view = render(React.createElement(TaskStatus, { state: { ...gameState, feedback: 'Есть несовпадения. Проверьте функцию.' }, busy: false, error: '' }))
@@ -996,6 +1008,9 @@ test('task feedback distinguishes warnings, failures and successful completion',
   assert.ok(screen.getByRole('alert').textContent.includes('Нет соединения'))
   view.rerender(React.createElement(TaskStatus, { state: { ...gameState, success: true }, busy: false, error: '' }))
   assert.equal(screen.getByRole('status').getAttribute('data-tone'), 'success')
+  view.rerender(React.createElement(TaskStatus, { state: { ...gameState, stage: 'return', success: true }, busy: false, error: '' }))
+  assert.ok(screen.getByText('Задание выполнено'))
+  assert.equal(screen.getByRole('status').getAttribute('data-completed'), 'true')
 })
 
 test('dialogue keeps keyboard focus on its own responses rather than the paused workspace', () => {

@@ -142,6 +142,7 @@ export function QuestConversation({ api, quests, location, close, reload, onAwar
 export function QuestInteraction({ api, quest, close, reload, onAwards, userId, target, alternatives = [], selectQuest }: Common & { quest: Quest | undefined, target: 'server' | 'terminal', alternatives?: Quest[], selectQuest?: (id: number) => void }) {
   const { send, busy, error } = useQuestAction(api, quest, reload, onAwards, userId)
   const [help, setHelp] = useState(false)
+  useEffect(() => { setHelp(false) }, [quest?.id])
   const state = quest?.gameplay?.state
   const invoke = (action: string, payload?: Record<string, unknown>) => { void send(action, payload).catch(() => {}) }
   return <div className="modal-backdrop task-backdrop" role="dialog" aria-modal="true" aria-label={quest?.title ?? 'Рабочая станция'}><section className={`panel task-window${target === 'server' ? ' task-server-window' : ''}`}>
@@ -150,9 +151,9 @@ export function QuestInteraction({ api, quest, close, reload, onAwards, userId, 
     {alternatives.length > 1 && <nav className="task-tabs" aria-label="Открыть задание">{alternatives.map(q => <button key={q.id} type="button" aria-pressed={q.id === quest?.id} onClick={() => selectQuest?.(q.id)}>{q.title}</button>)}</nav>}
     {!quest || !state ? <p>Выберите дело в телефоне → «Задачи» → «Начать задание».</p> : state.stage === 'intro' ? <p>Сначала поговорите с наставником: {quest.giver_npc_id === 'boris' ? 'Борисом' : quest.giver_npc_id === 'frontina' ? 'Фронтиной' : 'Анной'}.</p> : target === 'server' && quest.gameplay?.kind !== 'diagnosis' ? <><h3 className="task-success">API ● ONLINE</h3><p>Сервисы работают. Задача с функцией открывается на терминале за центральным столом.</p></> : target === 'server' ? <><h3 className={state.success ? 'task-success' : 'error'}>API {state.success ? '● ONLINE' : '● ERROR'}</h3><p>DATABASE ● ONLINE · CACHE ● ONLINE</p><p>{state.success ? 'Запросы снова проходят, индикатор зелёный.' : 'Красный индикатор только у API. За центральным столом терминал: там можно сравнить состояние сервисов и журнал.'}</p></> : state.stage === 'interaction' ? <><p>Инструменты готовы. Можно возвращаться к исследованию позже.</p><button type="button" disabled={busy} onClick={() => invoke('open')}>Начать работу на станции</button></> : <>
       {state.stage === 'return' ? <QuestCompleteBanner npc={quest.giver_npc_id === 'boris' ? 'Борису Бэкендовичу' : quest.giver_npc_id === 'frontina' ? 'Фронтине Пиксельевне' : 'Анне Литиковой'} /> : <div className="task-stage"><span>Исследование → гипотеза → проверка</span></div>}
+      {state.stage === 'mini-game' && quest.gameplay?.kind !== 'code' && <HintPanel kind={quest.gameplay?.kind ?? ''} count={state.hints} expanded={help} onToggle={() => setHelp(value => !value)} onAsk={() => invoke('hint')} busy={busy} />}
       {(state.stage === 'mini-game' || state.stage === 'return') && <fieldset className="task-workspace">{quest.gameplay?.kind === 'diagnosis' || quest.gameplay?.kind === 'code' ? <BackendGame userId={userId} quest={quest} send={send} busy={busy} /> : quest.gameplay?.kind === 'responsive' || quest.gameplay?.kind === 'ux' ? <FrontendGame userId={userId} quest={quest} send={send} busy={busy} /> : <AnalyticsGame quest={quest} send={send} busy={busy} />}</fieldset>}
       {state.stage === 'result' && <p>Наставник ждёт ваше впечатление. Вернитесь к нему.</p>}
-      {state.stage === 'mini-game' && quest.gameplay?.kind !== 'code' && <HintPanel kind={quest.gameplay?.kind ?? ''} count={state.hints} expanded={help} onToggle={() => setHelp(value => !value)} onAsk={() => invoke('hint')} busy={busy} />}
     </>}
     </div>
     <TaskStatus state={state} kind={quest?.gameplay?.kind} busy={busy} error={error} />

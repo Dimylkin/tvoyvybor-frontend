@@ -32,6 +32,7 @@
 .campus-phone .phone-contact-list .phone-contact + .phone-contact, .campus-phone .phone-objectives li, .campus-phone .phone-help > div + div { border-color: var(--phone-line); }
 .campus-phone .phone-actions button, .campus-phone .phone-alert button { background: var(--phone-accent); color: var(--phone-bg); }
 .campus-phone .phone-home-indicator { touch-action: none; }
+.campus-phone .phone-player-card > div { min-width:0; flex:1; }
 .campus-phone .phone-home-indicator::after { background: var(--phone-accent); }
 .campus-phone.phone-home-screen .phone-home-indicator::after { background: var(--phone-home-text); }
 .campus-phone { touch-action: pan-y; overscroll-behavior-x: contain; }
