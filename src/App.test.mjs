@@ -497,12 +497,14 @@ test('NPC automatically resumes the accepted quest intro and persists each spoke
   const props = { api, location: locationFor('backend'), close: () => { closed++ }, userId: 1, onAwards: () => {} }
   const reload = async () => view.rerender(React.createElement(QuestConversation, { ...props, quests: [quest], reload }))
   const view = render(React.createElement(QuestConversation, { ...props, quests: [quest], reload }))
-  assert.ok(screen.getByText('О, привет! Как дела?'))
+  assert.ok(screen.getByText('Привет. Уже успел заглянуть в серверную?'))
   fireEvent.keyDown(window, { key: 'Enter' })
-  assert.ok(screen.getByText('О, привет! Как дела?'))
-  fireEvent.click(screen.getByText('Нормально. Что случилось?'))
+  assert.ok(screen.getByText('Привет. Уже успел заглянуть в серверную?'))
+  fireEvent.click(screen.getByText('Пока только осматриваюсь.'))
   assert.ok(document.querySelector('.player-line'))
   fireEvent.keyDown(window, { key: 'Enter' })
+  assert.ok(screen.getByText(/Нормальный порядок/))
+  fireEvent.click(screen.getByText('К делу'))
   assert.ok(screen.getByText('Мы внесли небольшое изменение.'))
   assert.equal(screen.queryByRole('button', { name: /Игровая ситуация/ }), null)
   fireEvent.keyDown(window, { key: ' ', code: 'Space' })
@@ -521,6 +523,41 @@ test('NPC automatically resumes the accepted quest intro and persists each spoke
   await waitFor(() => assert.equal(closed, 1))
   assert.equal(calls.at(-1).action, 'intro-complete')
   assert.equal(new Set(calls.map(c => c.requestId)).size, calls.length)
+})
+
+test('ordinary NPC small talk is character-specific and opens profession topics after a response', async () => {
+  const { QuestConversation } = await vite.ssrLoadModule('/src/campusos/QuestInteraction.tsx')
+  const { locationFor } = await vite.ssrLoadModule('/src/world.ts')
+  const prompts = {
+    backend: 'Привет. Уже успел заглянуть в серверную?',
+    frontend: 'Привет! Как тебе кампус — уже нашёл что-нибудь красивое?',
+    analytics: 'Привет. Осваиваешься?',
+  }
+  const firstReplies = {
+    backend: 'Пока только осматриваюсь.',
+    frontend: 'Пока осматриваюсь.',
+    analytics: 'Да, понемногу.',
+  }
+  for (const slug of Object.keys(prompts)) {
+    const location = locationFor(slug)
+    const view = render(React.createElement(QuestConversation, { api: {}, quests: [], location, close: () => {}, reload: async () => {}, userId: 510, onAwards: () => {} }))
+    assert.ok(screen.getByText(prompts[slug]))
+    assert.equal(screen.getAllByRole('button').filter(button => button.className !== 'dialogue-end').length, 3)
+    fireEvent.click(screen.getByText(firstReplies[slug]))
+    assert.ok(document.querySelector('.player-line'))
+    fireEvent.keyDown(window, { key: 'Enter' })
+    assert.ok(screen.queryByText('Есть минутка поболтать?') === null)
+    fireEvent.click(screen.getByText('Выбрать тему'))
+    assert.ok(screen.getByText(location.greeting))
+    assert.ok(screen.getByText(location.choices[0].text))
+    fireEvent.click(screen.getByText(location.choices[0].text))
+    fireEvent.keyDown(window, { key: 'Enter' })
+    assert.ok(screen.getByText(location.choices[0].reaction))
+    fireEvent.click(screen.getByText('Выбрать другую тему'))
+    assert.ok(screen.getByText(location.greeting))
+    assert.equal(screen.queryByText('Есть минутка поболтать?'), null)
+    view.unmount()
+  }
 })
 
 test('profession questions return to the active quest without reopening the NPC', async () => {
@@ -949,9 +986,10 @@ test('every quest greets the player with a visible response and uses a distinct 
   for (const kind of Object.keys(introductions)) {
     const location = locationFor(['diagnosis', 'code'].includes(kind) ? 'backend' : ['responsive', 'ux'].includes(kind) ? 'frontend' : 'analytics')
     const view = render(React.createElement(QuestConversation, { api: {}, quests: [gameQuest(kind, { stage: 'intro', intro_line: 0 })], location, close: () => {}, reload: async () => {}, userId: 501, onAwards: () => {} }))
-    fireEvent.click(screen.getByText('Привет! Нормально.'))
+    fireEvent.click(screen.getByRole('button', { name: /Да, понемногу|Пока только осматриваюсь|Пока осматриваюсь/ }))
     assert.ok(document.querySelector('.player-line'))
     fireEvent.keyDown(window, { key: 'Enter' })
+    fireEvent.click(screen.getByText('К делу'))
     assert.ok(screen.getByText(introductions[kind][0].text))
     for (const reaction of Object.values(finalReactions[kind])) { assert.ok(!seen.has(reaction)); seen.add(reaction) }
     if (location.slug !== 'backend') { assert.doesNotMatch(finalReactions[kind].positive, /Рад /); }

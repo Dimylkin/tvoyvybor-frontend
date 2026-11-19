@@ -286,6 +286,8 @@ function MentorIntro({ location, step, onStep, onComplete }: { location: NonNull
 function MentorConversation({ api, location, quests, story, onStory, close }: { api: ApiClient, location: NonNullable<ReturnType<typeof locationFor>>, quests: Quest[], story: { final_quest_unlocked: boolean, final_quest_completed: boolean } | null, onStory: (state: { final_quest_unlocked: boolean, final_quest_completed: boolean }) => void, onAwards: (items: Achievement[]) => void, close: () => void }) {
   const [answer, setAnswer] = useState<string | null>(null)
   const [finalStage, setFinalStage] = useState(false)
+  const [greeted, setGreeted] = useState(false)
+  const [greetingReply, setGreetingReply] = useState<string | null>(null)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const topics = [
@@ -301,6 +303,11 @@ function MentorConversation({ api, location, quests, story, onStory, close }: { 
   ] as const
   const completed = quests.filter(q => q.status === 'completed' && q.gameplay)
   const directions = ['backend', 'frontend', 'analytics'].map(slug => ({ slug, name: ({ backend: 'Backend', frontend: 'Frontend', analytics: 'Analytics' } as Record<string, string>)[slug], items: completed.filter(q => q.location_slug === slug) })).filter(d => d.items.length)
+  if (!greeted) {
+    if (greetingReply) return <Dialogue location={location} onClose={close} scene={{ text: greetingReply, speaker: 'player', choices: [], advance: () => setGreeted(true) }} />
+    return <Dialogue location={location} onClose={close} scene={{ text: 'Привет. Осваиваешься? Я постараюсь отвечать короче, чем обычно.', emotion: 'friendly', canExit: true, choices: [{ text: 'Понемногу. Что здесь можно попробовать?', select: () => setGreetingReply('Понемногу. Что здесь можно попробовать?') }, { text: 'Осваиваюсь. Есть совет новичку?', select: () => setGreetingReply('Осваиваюсь. Есть совет новичку?') }] }} />
+  }
+  if (greetingReply) return <Dialogue location={location} onClose={close} scene={{ text: 'Хорошее начало. Здесь не нужно выбирать профессию навсегда — лучше попробовать и посмотреть, что зацепит.', emotion: 'thinking', canExit: true, choices: [{ text: 'Покажи темы', select: () => setGreetingReply(null) }] }} />
   if (finalStage && story?.final_quest_unlocked && !story.final_quest_completed) {
     const positive = [...directions].sort((a, b) => b.items.filter(q => ['more', 'interesting'].includes(q.gameplay?.state.reaction ?? '')).length - a.items.filter(q => ['more', 'interesting'].includes(q.gameplay?.state.reaction ?? '')).length)
     const strongest = positive[0]
