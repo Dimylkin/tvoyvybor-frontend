@@ -727,14 +727,14 @@ test('customer chat keeps message history and offers distracting questions witho
   assert.deepEqual(JSON.parse(calls.at(-1)[1].value), { problem: 'manual', automation: 'weekly-report', data: 'paid-csv', delivery: 'friday-director' })
 })
 
-test('phone summarizes quest interest and assistance in human terms', async () => {
+test('phone keeps quest activity history separate from new activity recommendations', async () => {
   const { CampusPhone } = await vite.ssrLoadModule('/src/campusos/CampusPhone.tsx')
   const quest = { ...gameQuest('code', { stage: 'complete', reaction: 'more', hints: 2, attempts: 4, success: true }), status: 'completed' }
   render(React.createElement(CampusPhone, { api: {}, user, quests: [quest], loading: false, loadError: '', reload: async () => {}, close: () => {}, logout: () => {}, profile: null, results: null }))
   fireEvent.click(screen.getByRole('button', { name: 'Профиль' }))
   fireEvent.click(screen.getByText(/Задания и статистика/))
   assert.ok(screen.getByText('Хочется продолжить'))
-  assert.ok(screen.getByText('Есть желание исследовать направление дальше.'))
+  assert.ok(screen.getByText('Стоит подробнее попробовать'))
   assert.match(document.body.textContent, /попыток: 4/)
   assert.match(document.body.textContent, /Помощь: 2 ур./)
 })
@@ -861,20 +861,23 @@ test('phone gestures go back from nested screens and swipe home without dismissi
 test('phone profile combines statistics, activities and recommendations without fit scores', async () => {
   const { QuestProfile } = await vite.ssrLoadModule('/src/campusos/QuestProfile.tsx')
   const q = { ...gameQuest('diagnosis', { stage: 'complete', reaction: 'interesting', attempts: 3, active_seconds: 180, success: true }), status: 'completed' }
-  render(React.createElement(QuestProfile, { quests: [q] }))
+  const activityProfile = { event_count: 1, performance_score: 1, preliminary: true, observations: 1, groups: [{ code: 'investigation', name: 'Поиск причин', description: 'Тебя увлекало выяснять, почему система ведёт себя именно так.', score: 5, evidence_count: 1, evidence: ['Пятничный релиз'] }], careers: [{ name: 'QA', explanation: 'В QA ищут причины сбоев и проверяют поведение продукта.' }, { name: 'DevOps', explanation: 'В DevOps диагностируют сервисы.' }], learning: [{ title: 'Debugging', action: 'Разбери ошибку по логам.', group: 'Поиск причин' }], additional: null }
+  render(React.createElement(QuestProfile, { quests: [q], activityProfile }))
   assert.ok(screen.getByRole('progressbar', { name: 'Общий прогресс' }))
   assert.ok(screen.getByText('1 из 1 ситуаций завершено'))
-  assert.ok(screen.getAllByText(/Искать причины проблем/).length >= 1)
-  assert.ok(screen.getByText(/СТОИТ ПОДРОБНЕЕ ПОПРОБОВАТЬ/))
-  assert.ok(screen.getByText(/ЧЕМУ УДЕЛИТЬ ВРЕМЯ/))
+  assert.ok(screen.getAllByText(/Поиск причин/).length >= 1)
+  assert.ok(screen.getByText('Стоит подробнее попробовать'))
+  assert.ok(screen.getByText('Чему уделить время'))
+  assert.ok(screen.getByText('QA'))
+  assert.ok(screen.getByText('Debugging'))
   assert.doesNotMatch(document.body.textContent, /% подходит/)
 })
 
 test('empty phone profile stays tentative when no tasks have been tried', async () => {
   const { QuestProfile } = await vite.ssrLoadModule('/src/campusos/QuestProfile.tsx')
-  render(React.createElement(QuestProfile, { quests: [] }))
+  render(React.createElement(QuestProfile, { quests: [], activityProfile: { event_count: 0, performance_score: 0, preliminary: true, observations: 0, groups: [], careers: [], learning: [], additional: null } }))
   assert.ok(screen.getByText('0 из 0 ситуаций завершено'))
-  assert.ok(screen.getByText(/Пока данных маловато для вывода/))
+  assert.ok(screen.getByText(/Пока данных мало для вывода/))
   assert.ok(screen.getByText('Здесь появятся первые занятия после начала заданий.'))
 })
 

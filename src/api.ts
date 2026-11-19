@@ -138,6 +138,37 @@ export interface FinalReport {
   next_steps: string[]
 }
 
+export interface ActivityInterest {
+  code: string
+  name: string
+  description: string
+  score: number
+  evidence_count: number
+  evidence: string[]
+}
+
+export interface ActivityRecommendation {
+  name: string
+  explanation: string
+}
+
+export interface LearningSuggestion {
+  title: string
+  action: string
+  group: string
+}
+
+export interface ActivityProfile {
+  event_count: number
+  performance_score: number
+  preliminary: boolean
+  groups: ActivityInterest[]
+  careers: ActivityRecommendation[]
+  learning: LearningSuggestion[]
+  additional: [string, string] | null
+  observations: number
+}
+
 export interface AdminScenario {
   id: number
   direction_id: number
@@ -274,6 +305,7 @@ export class ApiClient {
   recommendation(): Promise<Recommendation | null> { return this.request('/recommendation') }
   achievements(): Promise<Achievement[]> { return this.request('/achievements') }
   finalReport(): Promise<FinalReport> { return this.request('/final-report') }
+  activityProfile(): Promise<ActivityProfile> { return this.request('/activity-profile') }
   adminDirections(): Promise<Direction[]> { return this.directions() }
   adminScenarios(): Promise<AdminScenario[]> { return this.request('/admin/scenarios') }
   adminTasks(scenarioId: number): Promise<AdminTask[]> { return this.request(`/admin/scenarios/${scenarioId}/tasks`) }

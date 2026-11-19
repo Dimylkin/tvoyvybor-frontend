@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { ApiClient, ApiError, type Achievement, type AdminScenario, type AdminScenarioInput, type AdminTask, type AdminTaskInput, type Direction, type FinalReport, type InterestEvent, type InterestProfile, type Quest, type Recommendation, type Scenario, type User } from './api'
+import { ApiClient, ApiError, type Achievement, type ActivityProfile, type AdminScenario, type AdminScenarioInput, type AdminTask, type AdminTaskInput, type Direction, type FinalReport, type Quest, type Recommendation, type Scenario, type User } from './api'
 import { GameCanvas } from './GameCanvas'
 import { CampusCanvas } from './CampusCanvas'
 import { WorldControls } from './WorldControls'
@@ -290,6 +290,8 @@ function MentorConversation({ api, location, quests, story, onStory, close }: { 
   const [greetingReply, setGreetingReply] = useState<string | null>(null)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+  const [activityProfile, setActivityProfile] = useState<ActivityProfile | null>(null)
+  useEffect(() => { api.activityProfile().then(setActivityProfile).catch(() => setActivityProfile(null)) }, [api])
   const topics = [
     ['Что это вообще за место?', 'Кампус-песочница. Тут дают попробовать работу разных IT-команд без собеседования и без вопроса про пять лет.'],
     ['Что мне сейчас делать?', 'Открой телефон. В «Заданиях» всё, что сейчас доступно. Я бы выбрал то, что меньше всего похоже на мучение.'],
@@ -302,23 +304,19 @@ function MentorConversation({ api, location, quests, story, onStory, close }: { 
     ['Можно ли ошибаться?', 'Нужно. Ошибка — это наблюдение, иногда просто с очень громким интерфейсом.'],
   ] as const
   const completed = quests.filter(q => q.status === 'completed' && q.gameplay)
-  const directions = ['backend', 'frontend', 'analytics'].map(slug => ({ slug, name: ({ backend: 'Backend', frontend: 'Frontend', analytics: 'Analytics' } as Record<string, string>)[slug], items: completed.filter(q => q.location_slug === slug) })).filter(d => d.items.length)
   if (!greeted) {
     if (greetingReply) return <Dialogue location={location} onClose={close} scene={{ text: greetingReply, speaker: 'player', choices: [], advance: () => setGreeted(true) }} />
     return <Dialogue location={location} onClose={close} scene={{ text: 'Привет. Осваиваешься? Я постараюсь отвечать короче, чем обычно.', emotion: 'friendly', canExit: true, choices: [{ text: 'Понемногу. Что здесь можно попробовать?', select: () => setGreetingReply('Понемногу. Что здесь можно попробовать?') }, { text: 'Осваиваюсь. Есть совет новичку?', select: () => setGreetingReply('Осваиваюсь. Есть совет новичку?') }] }} />
   }
   if (greetingReply) return <Dialogue location={location} onClose={close} scene={{ text: 'Хорошее начало. Здесь не нужно выбирать профессию навсегда — лучше попробовать и посмотреть, что зацепит.', emotion: 'thinking', canExit: true, choices: [{ text: 'Покажи темы', select: () => setGreetingReply(null) }] }} />
   if (finalStage && story?.final_quest_unlocked && !story.final_quest_completed) {
-    const positive = [...directions].sort((a, b) => b.items.filter(q => ['more', 'interesting'].includes(q.gameplay?.state.reaction ?? '')).length - a.items.filter(q => ['more', 'interesting'].includes(q.gameplay?.state.reaction ?? '')).length)
-    const strongest = positive[0]
-    const strongestCount = strongest?.items.filter(q => ['more', 'interesting'].includes(q.gameplay?.state.reaction ?? '')).length ?? 0
-    const nextLine = !completed.length
-      ? 'Пока данных маловато для вывода. Попробуй несколько направлений — профиль уже ждёт тебя в телефоне.'
-      : strongestCount === 0
-        ? 'Похоже, явного фаворита пока нет. Зато теперь ты лучше знаешь, что тебе не подходит.'
-        : strongest && positive[1] && positive[1].items.filter(q => ['more', 'interesting'].includes(q.gameplay?.state.reaction ?? '')).length === strongestCount
-          ? 'Однозначного фаворита пока нет — и это нормально. Теперь выбираешь не только по названию профессии.'
-          : `Похоже, ${strongest?.name} зацепил тебя сильнее всего. Я бы туда заглянул ещё раз.`
+    const groups = activityProfile?.groups ?? []
+    const careers = activityProfile?.careers.slice(0, 3).map(item => item.name) ?? []
+    const nextLine = groups.length
+      ? `Похоже, тебе особенно нравится ${groups.slice(0, 2).map(group => group.name.toLowerCase()).join(' и ')}. Это встречается в разных областях${careers.length ? ` — например, ${careers.join(', ')}` : ''}. Посмотри профиль на телефоне: там есть объяснения и идеи, с чего попробовать.`
+      : !completed.length
+        ? 'Пока данных мало для вывода. Попробуй несколько занятий и отметь впечатление — профиль будет уточняться.'
+        : 'Пока не проявился устойчивый тип занятий. Это нормально: попробуй ещё задачи и сравни впечатления.'
     return <Dialogue location={location} onClose={close} scene={{ text: `Ну вот, всё попробовал. ${nextLine} Подробности — в профиле на телефоне. А дальше уже сам: я двери показал.`, emotion: 'friendly', error, busy, choices: [{ text: 'Завершить разговор', select: () => { setBusy(true); void api.completeFinalQuest().then(state => { onStory(state); close() }).catch(e => { setError(errorMessage(e)); setBusy(false) }) } }] }} />
   }
   if (story?.final_quest_unlocked && !story.final_quest_completed) return <Dialogue location={location} onClose={close} scene={{ text: 'Все основные задания позади. Хочешь коротко подвести итоги?', emotion: 'friendly', canExit: true, choices: [{ text: 'Да, давай подведём итоги', select: () => setFinalStage(true) }, { text: 'Нет, чуть позже', select: close }] }} />
@@ -327,21 +325,21 @@ function MentorConversation({ api, location, quests, story, onStory, close }: { 
 }
 
 function ProfileScreen({ api, compact = false }: { api: ApiClient, compact?: boolean }) {
-  const [data, setData] = useState<{ directions: Direction[], profile: InterestProfile, events: InterestEvent[] } | null>(null)
+  const [profile, setProfile] = useState<ActivityProfile | null>(null)
   const [error, setError] = useState('')
   const [revision, setRevision] = useState(0)
   useEffect(() => {
     let active = true
-    Promise.all([api.directions(), api.interestProfile(), api.interestEvents()]).then(([directions, profile, events]) => {
-      if (active) setData({ directions, profile, events })
-    }).catch((cause) => { if (active) setError(errorMessage(cause)) })
+    api.activityProfile().then((result) => { if (active) setProfile(result) }).catch((cause) => { if (active) setError(errorMessage(cause)) })
     return () => { active = false }
   }, [api, revision])
   return <main className="content">
-    <div className="page-heading"><span className="eyebrow">Ваш путь</span><h1>{compact ? 'Интересы' : 'Профиль интересов'}</h1><p>{compact ? 'История ответов из старых заданий.' : 'Исторические данные получены из старых заданий и не являются оценкой интереса по новым квестам.'}</p></div>
-    {error ? <LoadState error={error} retry={() => { setError(''); setRevision((value) => value + 1) }} /> : !data ? <p>Загружаем профиль…</p> : <>
-      <section className="panel"><h2>Направления</h2>{Object.keys(data.profile.direction_scores).length === 0 ? <p>{compact ? 'Наблюдений пока нет.' : 'Исторических наблюдений пока нет. Новые квесты не оценивают правильность ответов.'}</p> : <ul className="score-list">{Object.entries(data.profile.direction_scores).map(([id, score]) => <li key={id}><span>{data.directions.find((item) => item.id === Number(id))?.title ?? `Направление ${id}`}</span><strong>{score}</strong></li>)}</ul>}<p className="muted">Учтено событий: {data.profile.event_count}</p></section>
-      <section className="panel"><h2>История наблюдений</h2>{data.events.length === 0 ? <p>Событий пока нет.</p> : <ul className="event-list">{data.events.map((event, index) => <li key={`${event.task_id}-${index}`}><strong>{data.directions.find((item) => item.id === event.direction_id)?.title ?? `Направление ${event.direction_id}`}</strong><p>{event.explanation}</p></li>)}</ul>}</section>
+    <div className="page-heading"><span className="eyebrow">Ваш путь</span><h1>{compact ? 'Интересы' : 'Профиль интересов'}</h1><p>Какие занятия тебя увлекают и что можно попробовать дальше. Это ориентир, а не оценка способностей.</p></div>
+    {error ? <LoadState error={error} retry={() => { setError(''); setRevision((value) => value + 1) }} /> : !profile ? <p>Загружаем профиль…</p> : <>
+      <section className="panel"><h2>Твои интересы</h2>{profile.groups.length ? <ul className="event-list">{profile.groups.map((group) => <li key={group.code}><strong>{group.name}</strong><p>{group.description}</p>{group.evidence.slice(0, 2).map((reason) => <small key={reason}>{reason}<br /></small>)}</li>)}</ul> : <p>Пока данных мало для вывода. Попробуй занятие и поделись впечатлением с наставником.</p>}{profile.preliminary && profile.event_count > 0 && <p className="muted">Профиль предварительный и уточнится по мере новых впечатлений.</p>}</section>
+      <section className="panel"><h2>Стоит подробнее попробовать</h2>{profile.careers.length ? <ul className="event-list">{profile.careers.slice(0, 4).map((career) => <li key={career.name}><strong>{career.name}</strong><p>{career.explanation}</p></li>)}</ul> : <p>Рекомендации появятся после первых игровых наблюдений.</p>}</section>
+      <section className="panel"><h2>Чему уделить время</h2>{profile.learning.length ? <ul className="event-list">{profile.learning.slice(0, 4).map((item) => <li key={item.title}><strong>{item.title}</strong><p>{item.action}</p></li>)}</ul> : <p>Попробуй несколько занятий, чтобы появились подходящие следующие шаги.</p>}</section>
+      {profile.additional && <section className="panel"><h2>Что ещё стоит попробовать</h2><strong>{profile.additional[0]}</strong><p>{profile.additional[1]}</p></section>}
     </>}
   </main>
 }
