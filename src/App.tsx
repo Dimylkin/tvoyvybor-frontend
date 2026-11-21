@@ -9,7 +9,7 @@ import { returnPosition, type CampusEntry, type CampusPosition } from './campusR
 import { CampusPhone } from './campusos/CampusPhone'
 import { ActivitySummary } from './campusos/ActivitySummary'
 import { ActivityReflection } from './campusos/ActivityReflection'
-import { activityLabel, questStatus } from './campusos/activityLabels'
+import { activityLabel, insightStatusText, questStatus } from './campusos/activityLabels'
 import { QuestConversation, QuestInteraction } from './campusos/QuestInteraction'
 import { locationFor, mainBuilding } from './world'
 import './style.css'
@@ -320,9 +320,10 @@ function MentorConversation({ api, location, story, onStory, close }: { api: Api
     if (profileError) return <Dialogue location={location} onClose={close} scene={{ text: 'Не удалось загрузить профиль.', emotion: 'thinking', choices: [{ text: 'Повторить', select: () => setProfileRevision(v => v + 1) }, { text: 'Позже', select: close }] }} />
     if (!activityProfile) return <Dialogue location={location} onClose={close} scene={{ text: 'Загружаю твои наблюдения…', choices: [] }} />
     const insights = activityProfile.insights ?? []
-    const nextLine = insights.length ? insights.map(i => `${i.label}: ${i.evidence.map(e => e.description).join(' ')}`).join(' ') : 'Пока нет положительных впечатлений о конкретных действиях.'
+    const nextLine = insights.length ? insights.map(i => `${i.label}: ${insightStatusText(i.status)} ${i.evidence.map(e => e.description).join(' ')}`).join(' ') : 'Пока нет положительных впечатлений о конкретных действиях.'
+    const careers = activityProfile.careers.length ? ` Направления для знакомства: ${activityProfile.careers.map(c => `${c.name}. ${c.explanation}`).join(' ')}` : ''
     const nextStep = activityProfile.next_step ? ` Следующая проба: ${activityProfile.next_step.title}. ${activityProfile.next_step.explanation}` : ''
-    return <Dialogue location={location} onClose={close} scene={{ text: `${nextLine}${nextStep} Подробности — в профиле на телефоне.`, emotion: 'friendly', error, busy, choices: [{ text: 'Завершить разговор', select: () => { setBusy(true); void api.completeFinalQuest().then(state => { onStory(state); close() }).catch(e => { setError(errorMessage(e)); setBusy(false) }) } }] }} />
+    return <Dialogue location={location} onClose={close} scene={{ text: `${nextLine}${careers}${nextStep} Подробности — в профиле на телефоне.`, emotion: 'friendly', error, busy, choices: [{ text: 'Завершить разговор', select: () => { setBusy(true); void api.completeFinalQuest().then(state => { onStory(state); close() }).catch(e => { setError(errorMessage(e)); setBusy(false) }) } }] }} />
   }
   if (story?.final_quest_unlocked && !story.final_quest_completed) return <Dialogue location={location} onClose={close} scene={{ text: 'Все основные задания позади. Хочешь коротко подвести итоги?', emotion: 'friendly', canExit: true, choices: [{ text: 'Да, давай подведём итоги', select: () => setFinalStage(true) }, { text: 'Нет, чуть позже', select: close }] }} />
   if (answer) return <Dialogue location={location} onClose={close} onBack={() => setAnswer(null)} scene={{ text: answer, emotion: 'thinking', choices: [{ text: 'Ещё вопрос', select: () => setAnswer(null) }, ...(story?.final_quest_unlocked && !story.final_quest_completed ? [{ text: 'Подвести итоги путешествия', select: () => setFinalStage(true) }] : []), { text: 'До встречи', select: close }] }} />
