@@ -1065,3 +1065,32 @@ test('dialogue keeps keyboard focus on its own responses rather than the paused 
   fireEvent.keyDown(window, { key: 'Tab' })
   assert.equal(document.activeElement, buttons[1])
 })
+
+test('reflection retry preserves the answer and request ID', async () => {
+  const { ActivityReflection } = await vite.ssrLoadModule('/src/campusos/ActivityReflection.tsx')
+  const calls = []
+  let closed = false
+  let reloaded = false
+  const api = { reflectQuest: async (...args) => { calls.push(args); if (calls.length === 1) throw new Error('Сеть недоступна') } }
+  const item = { quest_id: 42, title: 'Проба', activities: [{ code: 'coding', label: 'Работа с кодом' }], reflection: null }
+  render(React.createElement(ActivityReflection, { api, item, onSaved: async () => { reloaded = true }, onClose: () => { closed = true } }))
+  fireEvent.change(screen.getByLabelText('Действие'), { target: { value: 'coding' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Сохранить' }))
+  await screen.findByRole('alert')
+  assert.equal(screen.getByLabelText('Действие').value, 'coding')
+  fireEvent.click(screen.getByRole('button', { name: 'Сохранить' }))
+  await waitFor(() => assert.equal(closed, true))
+  assert.equal(reloaded, true)
+  assert.equal(calls[0][1], calls[1][1])
+  assert.deepEqual(calls[1][2], { response: 'repeat', activity_code: 'coding', barrier: null })
+})
+
+test('next activity opens the specified quest card', async () => {
+  const { ActivitySummary } = await vite.ssrLoadModule('/src/campusos/ActivitySummary.tsx')
+  let opened = null
+  const profile = { insights: [{ activity_code: 'investigation', label: 'Поиск причин', status: 'hypothesis', evidence: [{ quest_id: 1, description: 'Основание' }] }], careers: [], next_step: { quest_id: 42, title: 'Другая ситуация', explanation: 'Проверь гипотезу' } }
+  render(React.createElement(ActivitySummary, { profile, openQuest: id => { opened = id } }))
+  assert.ok(screen.getByText('Основание'))
+  fireEvent.click(screen.getByRole('button', { name: 'Открыть карточку задания' }))
+  assert.equal(opened, 42)
+})

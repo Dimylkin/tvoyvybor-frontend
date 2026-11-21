@@ -158,6 +158,20 @@ export interface LearningSuggestion {
   group: string
 }
 
+export interface ActivityReflection {
+  response: 'repeat' | 'unsure' | 'not_mine'
+  activity_code: string | null
+  barrier: 'difficulty' | 'interface' | 'activity' | null
+}
+export interface ActivityHistory {
+  quest_id: number
+  title: string
+  status: string
+  published: boolean
+  legacy_reaction: string | null
+  activities: { code: string, label: string }[]
+  reflection: ActivityReflection | null
+}
 export interface ActivityProfile {
   event_count: number
   performance_score: number
@@ -167,6 +181,9 @@ export interface ActivityProfile {
   learning: LearningSuggestion[]
   additional: [string, string] | null
   observations: number
+  history: ActivityHistory[]
+  insights: { activity_code: string, label: string, status: 'hypothesis' | 'repeated' | 'mixed', evidence: { quest_id: number, title: string, description: string }[] }[]
+  next_step: { quest_id: number | null, title: string, explanation: string } | null
 }
 
 export interface AdminScenario {
@@ -306,6 +323,7 @@ export class ApiClient {
   achievements(): Promise<Achievement[]> { return this.request('/achievements') }
   finalReport(): Promise<FinalReport> { return this.request('/final-report') }
   activityProfile(): Promise<ActivityProfile> { return this.request('/activity-profile') }
+  reflectQuest(id: number, requestId: string, reflection: ActivityReflection): Promise<ActivityReflection> { return this.request(`/quests/${id}/reflection`, { method: 'POST', body: JSON.stringify({ request_id: requestId, ...reflection }) }) }
   adminDirections(): Promise<Direction[]> { return this.directions() }
   adminScenarios(): Promise<AdminScenario[]> { return this.request('/admin/scenarios') }
   adminTasks(scenarioId: number): Promise<AdminTask[]> { return this.request(`/admin/scenarios/${scenarioId}/tasks`) }
