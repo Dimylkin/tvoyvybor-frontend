@@ -727,16 +727,19 @@ test('customer chat keeps message history and offers distracting questions witho
   assert.deepEqual(JSON.parse(calls.at(-1)[1].value), { problem: 'manual', automation: 'weekly-report', data: 'paid-csv', delivery: 'friday-director' })
 })
 
-test('phone keeps quest activity history separate from new activity recommendations', async () => {
-  const { CampusPhone } = await vite.ssrLoadModule('/src/campusos/CampusPhone.tsx')
+test('phone keeps quest history and statistics collapsed', async () => {
+  const { QuestProfile } = await vite.ssrLoadModule('/src/campusos/QuestProfile.tsx')
   const quest = { ...gameQuest('code', { stage: 'complete', reaction: 'more', hints: 2, attempts: 4, success: true }), status: 'completed' }
-  render(React.createElement(CampusPhone, { api: {}, user, quests: [quest], loading: false, loadError: '', reload: async () => {}, close: () => {}, logout: () => {}, profile: null, results: null }))
-  fireEvent.click(screen.getByRole('button', { name: 'Профиль' }))
-  fireEvent.click(screen.getByText(/Задания и статистика/))
-  assert.ok(screen.getByText('Хочется продолжить'))
-  assert.ok(screen.getByText('Стоит подробнее попробовать'))
-  assert.match(document.body.textContent, /попыток: 4/)
-  assert.match(document.body.textContent, /Помощь: 2 ур./)
+  const activityProfile = { event_count: 1, groups: [], careers: [], learning: [], insights: [], next_step: null, history: [{ quest_id: quest.id, title: quest.title, status: 'completed', published: true, activities: [], reflection: null, legacy_reaction: 'more' }] }
+  render(React.createElement(QuestProfile, { quests: [quest], activityProfile }))
+  const history = screen.getByText(/История проб и статистика/).closest('details')
+  assert.equal(history.open, false)
+  fireEvent.click(screen.getByText(/История проб и статистика/))
+  assert.equal(history.open, true)
+  assert.match(history.textContent, /Хочется продолжить/)
+  assert.match(history.textContent, /попыток: 4/i)
+  assert.match(history.textContent, /Подсказок: 2/)
+  assert.doesNotMatch(document.body.textContent, /Стоит подробнее попробовать/)
 })
 
 test('workstations are reachable without overlapping their NPC interaction radius', async () => {
@@ -858,27 +861,27 @@ test('phone gestures go back from nested screens and swipe home without dismissi
   assert.equal(closed, 1)
 })
 
-test('phone profile combines statistics, activities and recommendations without fit scores', async () => {
+test('phone profile puts main observation first and hides reasons and statistics', async () => {
   const { QuestProfile } = await vite.ssrLoadModule('/src/campusos/QuestProfile.tsx')
   const q = { ...gameQuest('diagnosis', { stage: 'complete', reaction: 'interesting', attempts: 3, active_seconds: 180, success: true }), status: 'completed' }
-  const activityProfile = { event_count: 1, performance_score: 1, preliminary: true, observations: 1, groups: [{ code: 'investigation', name: 'Поиск причин', description: 'Тебя увлекало выяснять, почему система ведёт себя именно так.', score: 5, evidence_count: 1, evidence: ['Пятничный релиз'] }], careers: [{ name: 'QA', explanation: 'В QA ищут причины сбоев и проверяют поведение продукта.' }, { name: 'DevOps', explanation: 'В DevOps диагностируют сервисы.' }], learning: [{ title: 'Debugging', action: 'Разбери ошибку по логам.', group: 'Поиск причин' }], additional: null }
+  const activityProfile = { event_count: 1, performance_score: 1, preliminary: true, observations: 1, groups: [], careers: [], learning: [], additional: null, history: [], main_observation: { activity_code: 'investigation', status: 'hypothesis', headline: 'Похоже, тебе интересно искать причины.', interest: 'Тебе интересно проверять версии.', direction: 'QA', example: 'Проверь гипотезу.' }, insights: [{ activity_code: 'investigation', label: 'Поиск причин', status: 'hypothesis', evidence: [{ quest_id: q.id, title: q.title, description: 'Проверял версию о причине сбоя.' }] }], next_step: null }
   render(React.createElement(QuestProfile, { quests: [q], activityProfile }))
-  assert.ok(screen.getByRole('progressbar', { name: 'Общий прогресс' }))
-  assert.ok(screen.getByText('1 из 1 ситуаций завершено'))
-  assert.ok(screen.getAllByText(/Поиск причин/).length >= 1)
-  assert.ok(screen.getByText('Стоит подробнее попробовать'))
-  assert.ok(screen.getByText('Чему уделить время'))
-  assert.ok(screen.getByText('QA'))
-  assert.ok(screen.getByText('Debugging'))
-  assert.doesNotMatch(document.body.textContent, /% подходит/)
+  assert.ok(screen.getByText('Похоже, тебе интересно искать причины.'))
+  assert.match(document.body.textContent, /QA/)
+  const reason = screen.getByText('Почему такой вывод?').closest('details')
+  assert.equal(reason.open, false)
+  fireEvent.click(screen.getByText('Почему такой вывод?'))
+  assert.match(reason.textContent, /Проверял версию о причине сбоя/)
+  assert.equal(screen.getByText(/История проб и статистика/).closest('details').open, false)
+  assert.doesNotMatch(document.body.textContent, /Стоит подробнее попробовать|% подходит/)
 })
 
-test('empty phone profile stays tentative when no tasks have been tried', async () => {
+test('empty phone profile offers exploration and collapses statistics', async () => {
   const { QuestProfile } = await vite.ssrLoadModule('/src/campusos/QuestProfile.tsx')
-  render(React.createElement(QuestProfile, { quests: [], activityProfile: { event_count: 0, performance_score: 0, preliminary: true, observations: 0, groups: [], careers: [], learning: [], additional: null } }))
-  assert.ok(screen.getByText('0 из 0 ситуаций завершено'))
-  assert.ok(screen.getByText(/Пока данных мало для вывода/))
-  assert.ok(screen.getByText('Здесь появятся первые занятия после начала заданий.'))
+  render(React.createElement(QuestProfile, { quests: [], activityProfile: { event_count: 0, performance_score: 0, preliminary: true, observations: 0, groups: [], careers: [], learning: [], additional: null, history: [], insights: [], next_step: { quest_id: 1, title: 'Пятничный релиз', explanation: 'Попробуй новую ситуацию.' }, main_observation: null } }))
+  assert.ok(screen.getByText(/Пока нет положительных впечатлений/))
+  assert.ok(screen.getByText(/Следующая проба: Пятничный релиз/))
+  assert.equal(screen.getByText(/История проб и статистика/).closest('details').open, false)
 })
 
 test('quest completion feedback tells the player which mentor to return to', async () => {
@@ -1093,4 +1096,19 @@ test('next activity opens the specified quest card', async () => {
   assert.ok(screen.getByText('Основание'))
   fireEvent.click(screen.getByRole('button', { name: 'Открыть карточку задания' }))
   assert.equal(opened, 42)
+})
+
+test('all six stations omit reflection and stray zero while keeping game values', async () => {
+  const { QuestInteraction } = await vite.ssrLoadModule('/src/campusos/QuestInteraction.tsx')
+  for (const kind of ['diagnosis', 'code', 'responsive', 'ux', 'interview', 'data']) {
+    render(React.createElement(QuestInteraction, { api: {}, quest: gameQuest(kind), userId: 800, close: () => {}, reload: async () => {}, onAwards: () => {}, target: 'terminal' }))
+    assert.equal(screen.queryByRole('button', { name: /Отметить впечатление/ }), null, kind)
+    if (kind === 'code') {
+      assert.equal(screen.queryByText('calculate_average.py'), null)
+      assert.ok(screen.getByRole('textbox', { name: 'Код Python' }))
+    }
+    const stray = [...document.querySelector('.task-window').childNodes].filter(node => node.nodeType === 3 && node.textContent.trim() === '0')
+    assert.equal(stray.length, 0, kind)
+    cleanup()
+  }
 })

@@ -65,8 +65,16 @@
 .phone-interest-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-block: 10px; }.phone-interest-chips > span { background: var(--phone-soft); color: var(--phone-accent); padding: 6px 8px; border-radius: 9px; font-size: 10px; }
 .phone-profile-groups { display: grid; gap: 8px; }.phone-interest-group { border-inline-start: 3px solid var(--phone-accent); }.phone-interest-group p, .phone-profile-note { color: var(--phone-muted); }.phone-interest-group small { color: var(--phone-accent); font-size: 10px; }.phone-profile-note { display: block; margin: 10px 2px; line-height: 1.5; }
 .phone-profile-history > summary, .phone-faq summary { cursor: pointer; font-weight: 650; }.phone-profile-history > summary { margin: 16px 0 10px; }
+.phone-main-observation details, .phone-history-actions { margin-top: 1rem; }
+.phone-history-actions button { background: var(--phone-soft); color: var(--phone-accent); border: 1px solid var(--phone-line); border-radius: 8px; padding: .5rem .7rem; }
 .campus-phone .phone-help > div { align-items: center; }.campus-phone .phone-help span { font-size: 10px; text-align: right; }
 .campus-phone .phone-help kbd { white-space: nowrap; font-size: 9px; }
 .campus-phone .phone-alert { color: #e15b70; }
 .campus-phone button:focus-visible, .campus-phone summary:focus-visible { outline: 2px solid var(--phone-accent); outline-offset: 3px; }
 .campus-phone.phone-app-screen { background: var(--phone-bg); color: var(--phone-text); }
+
+/* Phaser FIT centers an 800×500 scene inside the play area. */
+.phone-backdrop .phone-device {
+  margin-right: max(0px, calc((100cqw - 160cqh) / 2));
+  width: min(320px, calc((min(100cqh, 62.5cqw) - 2rem) * .49), 100%);
+}

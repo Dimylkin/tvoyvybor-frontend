@@ -35,18 +35,27 @@ test('history explains archived action and abandoned status without exposing cod
 })
 
 
-test('late profile response cannot attach another quest reflection to station', async () => {
+test('station does not load or offer reflection', async () => {
   const { QuestInteraction } = await vite.ssrLoadModule('/src/campusos/QuestInteraction.tsx')
-  const pending = []
-  const api = { activityProfile: () => new Promise(resolve => pending.push(resolve)) }
-  const quest = (id, title) => ({ id, title, status: 'active', location_slug: 'backend', giver_npc_id: 'boris', accepted_at: '2026-01-01', gameplay: { kind: 'diagnosis', state: { stage: 'intro', hints: 0, attempts: 0 } } })
-  const props = { api, close: () => {}, reload: async () => {}, onAwards: () => {}, userId: 1, target: 'terminal' }
-  const view = render(React.createElement(QuestInteraction, { ...props, quest: quest(1, 'Первое') }))
-  view.rerender(React.createElement(QuestInteraction, { ...props, quest: quest(2, 'Второе') }))
-  const item = (id, title) => ({ quest_id: id, title, published: true, activities: [{ code: 'coding', label: 'Работать над кодом' }], reflection: null })
-  await act(async () => pending[1]({ history: [item(2, 'Второе')] }))
-  await act(async () => pending[0]({ history: [item(1, 'Первое')] }))
-  fireEvent.click(screen.getByRole('button', { name: 'Отметить впечатление' }))
-  assert.ok(screen.getByRole('region', { name: 'Впечатление: Второе' }))
-  assert.equal(screen.queryByRole('region', { name: 'Впечатление: Первое' }), null)
+  let profileCalls = 0
+  const api = { activityProfile: async () => { profileCalls++; return { history: [] } } }
+  const quest = { id: 1, title: 'Первое', status: 'active', location_slug: 'backend', giver_npc_id: 'boris', accepted_at: '2026-01-01', gameplay: { kind: 'diagnosis', state: { stage: 'mini-game', hints: 0, attempts: 0, seen: [] } } }
+  render(React.createElement(QuestInteraction, { api, quest, close: () => {}, reload: async () => {}, onAwards: () => {}, userId: 1, target: 'terminal' }))
+  await act(async () => {})
+  assert.equal(profileCalls, 0)
+  assert.equal(screen.queryByRole('button', { name: /Отметить впечатление/ }), null)
+})
+
+test('opening a quest from a route replaces an already open final card', async () => {
+  const { CampusPhone } = await vite.ssrLoadModule('/src/campusos/CampusPhone.tsx')
+  const quest = { id: 7, title: 'Новое дело', description: 'Описание', location_slug: 'backend', giver_npc_id: 'boris', category: 'professional', status: 'available', accepted_at: null, objectives: [], gameplay: null }
+  const props = { api: {}, user: { email: 'user@example.com' }, quests: [quest], loading: false, loadError: '', reload: async () => {}, close: () => {}, logout: () => {}, profile: null, finalQuestUnlocked: true }
+  const view = render(React.createElement(CampusPhone, props))
+  fireEvent.click(screen.getByRole('button', { name: 'Задачи' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Доступные' }))
+  fireEvent.click(screen.getByText('Подвести итоги'))
+  assert.ok(screen.getByRole('heading', { name: 'Подвести итоги' }))
+  view.rerender(React.createElement(CampusPhone, { ...props, initialQuestId: 7 }))
+  assert.ok(screen.getByRole('heading', { name: 'Новое дело' }))
+  assert.equal(screen.queryByRole('heading', { name: 'Подвести итоги' }), null)
 })

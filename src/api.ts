@@ -184,6 +184,7 @@ export interface ActivityProfile {
   history: ActivityHistory[]
   insights: { activity_code: string, label: string, status: 'hypothesis' | 'repeated' | 'mixed', evidence: { quest_id: number, title: string, description: string }[] }[]
   next_step: { quest_id: number | null, title: string, explanation: string } | null
+  main_observation?: { activity_code: string, status: 'hypothesis' | 'repeated' | 'mixed', headline: string, interest: string, direction: string, example: string } | null
 }
 
 export interface AdminScenario {
