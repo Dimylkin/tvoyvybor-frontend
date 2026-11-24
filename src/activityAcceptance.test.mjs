@@ -57,6 +57,7 @@ for (const status of Object.keys(labels)) {
     fireEvent.keyDown(window, { code: 'Space', key: ' ' })
     fireEvent.click(screen.getByRole('button', { name: /Покажи темы/ }))
     fireEvent.click(screen.getByText('Подвести итоги'))
+    fireEvent.click(screen.getByRole('button', { name: /Пока не знаю/ }))
     await waitFor(() => assert.match(document.body.textContent, new RegExp(labels[status].replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))))
     assert.doesNotMatch(document.body.textContent, /В «Пятничном релизе» ты искал причину сбоя/)
   })
@@ -144,3 +145,20 @@ for (const scenario of [
     if (!scenario.response) assert.equal(calls.length, 0)
   })
 }
+
+test('final dialogue survives profile failure and can open the report after saving', async () => {
+  let saved = false
+  let opened = false
+  const api = { activityProfile: async () => { throw new Error('unavailable') }, completeFinalQuest: async () => { saved = true; return { final_quest_unlocked: true, final_quest_completed: true } } }
+  render(React.createElement(MentorConversation, { api, location: locationFor('narrator'), quests: [], story: { final_quest_unlocked: true, final_quest_completed: false }, onStory: noop, onAwards: noop, onOpenProfile: () => { opened = true }, onQuestionnaire: noop, close: noop }))
+  fireEvent.click(screen.getByRole('button', { name: /Понемногу\. Что здесь можно попробовать/ }))
+  fireEvent.keyDown(window, { code: 'Space', key: ' ' })
+  fireEvent.click(screen.getByRole('button', { name: /Покажи темы/ }))
+  fireEvent.click(screen.getByText('Подвести итоги'))
+  fireEvent.click(screen.getByRole('button', { name: /Пока не знаю/ }))
+  fireEvent.click(screen.getByRole('button', { name: /Завершить разговор/ }))
+  const open = await screen.findByRole('button', { name: /Открыть профиль/ })
+  assert.equal(saved, true)
+  fireEvent.click(open)
+  assert.equal(opened, true)
+})

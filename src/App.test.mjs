@@ -112,6 +112,7 @@ test('registering a new player on /register opens the prologue in the campus hub
     fireEvent.click(choice)
     fireEvent.keyDown(window, { code: 'Space', key: ' ' })
   }
+  fireEvent.click(await screen.findByRole('button', { name: /Чуть позже/ }))
   await waitFor(() => assert.ok(!screen.queryByRole('dialog', { name: 'Разговор: Дядя Дебаг' })))
   assert.ok(requests.some((request) => request.path === '/api/game/intro-complete' && request.method === 'PUT'))
   fireEvent.click(screen.getByRole('button', { name: 'Телефон · Tab' }))
@@ -157,6 +158,7 @@ test('a new player starts in the main building and remains there after the prolo
     fireEvent.click(choice)
     fireEvent.keyDown(window, { code: 'Space', key: ' ' })
   }
+  fireEvent.click(await screen.findByRole('button', { name: /Чуть позже/ }))
   await waitFor(() => assert.ok(!screen.queryByRole('dialog', { name: 'Разговор: Дядя Дебаг' })))
   assert.ok(screen.getByLabelText('Игровая сцена'))
   assert.equal(screen.queryByLabelText('Игровой кампус'), null)
@@ -959,6 +961,18 @@ test('NPC responds after every interest answer including a completed quest disap
     assert.equal(closed, 1)
     view.unmount()
   }
+})
+
+test('a player can finish a quest without answering the interest question', async () => {
+  const { QuestConversation } = await vite.ssrLoadModule('/src/campusos/QuestInteraction.tsx')
+  const { locationFor } = await vite.ssrLoadModule('/src/world.ts')
+  const quest = gameQuest('diagnosis', { stage: 'result' })
+  const calls = []
+  const props = { location: locationFor('backend'), close: () => {}, userId: 404, onAwards: () => {}, quests: [quest], reload: async () => {}, api: { questAction: async (id, rid, action) => { calls.push(action); return { state: quest.gameplay.state, awards: [] } } } }
+  render(React.createElement(QuestConversation, props))
+  fireEvent.click(screen.getByText('Пока не хочу отвечать'))
+  await screen.findByText(/Спасибо за работу/)
+  assert.deepEqual(calls, ['finish'])
 })
 
 test('code debrief offers four honest answers and remembers the selected branch', async () => {

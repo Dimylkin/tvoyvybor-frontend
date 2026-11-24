@@ -1,3 +1,8 @@
+export interface QuestionnaireAnswer { status: 'answered' | 'skipped' | 'unsure', value?: number | string[] | null }
+export interface QuestionnaireQuestion { id: string, format: 'scale' | 'choice', text: string, prompt?: string, max_choices?: number, options?: { id: string, label: string }[] }
+export interface QuestionnaireAttempt { id: number, number: number, status: 'in_progress' | 'completed', current_question_id: string, revision: number, answers: Record<string, QuestionnaireAnswer>, started_at: string, completed_at: string | null }
+export interface QuestionnaireState { status: 'not_started' | 'in_progress' | 'completed', current: QuestionnaireAttempt | null, last_completed: QuestionnaireAttempt | null }
+
 export interface GameState {
   stage: 'intro' | 'interaction' | 'mini-game' | 'return' | 'result' | 'complete'
   assistant_questions?: string[]
@@ -172,7 +177,10 @@ export interface ActivityHistory {
   activities: { code: string, label: string }[]
   reflection: ActivityReflection | null
 }
+export interface ReflectionV2 { quest_id: number, code: string, rating: number | 'unable' | null, reason: string | null, evidence_event_id: number }
+export interface CareerProfile { version: number, status: 'empty' | 'preliminary' | 'established', rated_quests: number, directions: { code: string, title: string, score: number | null, traits: string[], coverage: number }[], leaders: string[], careers: { code: string, title: string, score: number | null, traits: string[], tasks: string, skills: string[], exercises: string[], represented: boolean }[], traits: Record<string, { value: number, questionnaire: number | null, game: number | null, divergent: boolean, evidence: { quest_id: number, title: string, activity: string, rating: number, reason: string | null, recorded_at: string, questionnaire_order: 'before' | 'after' | null }[] }>, reflections: ReflectionV2[], next_step: { quest_id: number | null, title: string, explanation: string } | null }
 export interface ActivityProfile {
+  career_profile?: CareerProfile
   event_count: number
   performance_score: number
   preliminary: boolean
@@ -242,6 +250,10 @@ export class ApiClient {
   private readonly getToken: () => string | null
   private readonly onUnauthorized: () => void
   private readonly fetchImpl: typeof fetch
+  private profileCache: Promise<ActivityProfile> | null = null
+  private profileGeneration = 0
+  private profileToken: string | null = null
+  private invalidateProfile() { this.profileGeneration++; this.profileCache = null }
   constructor(
     baseUrl: string,
     getToken: () => string | null,
@@ -302,7 +314,7 @@ export class ApiClient {
     return this.request('/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) }, false)
   }
 
-  questAction(id: number, requestId: string, action: string, payload: Record<string, unknown> = {}): Promise<GameActionResult> { return this.request(`/quests/${id}/actions`, { method: 'POST', body: JSON.stringify({ request_id: requestId, action, payload }) }) }
+  async questAction(id: number, requestId: string, action: string, payload: Record<string, unknown> = {}): Promise<GameActionResult> { const result = await this.request<GameActionResult>(`/quests/${id}/actions`, { method: 'POST', body: JSON.stringify({ request_id: requestId, action, payload }) }); if (action !== 'engage') this.invalidateProfile(); return result }
   quests(): Promise<Quest[]> { return this.request('/quests') }
   offerQuest(id: number, npcId: string): Promise<Quest> { return this.request(`/quests/${id}/offer`, { method: 'POST', body: JSON.stringify({ npc_id: npcId }) }) }
   acceptQuest(id: number): Promise<Quest> { return this.request(`/quests/${id}/accept`, { method: 'POST' }) }
@@ -311,6 +323,12 @@ export class ApiClient {
   terminal(requestId: string): Promise<{ log: string, port: number }> { return this.request('/game/backend-terminal', { method: 'POST', body: JSON.stringify({ request_id: requestId }) }) }
   interact(requestId: string, eventType: string, targetKey: string, payload: Record<string, unknown> = {}): Promise<InteractionResult> { return this.request('/game/interactions', { method: 'POST', body: JSON.stringify({ request_id: requestId, event_type: eventType, target_key: targetKey, payload }) }) }
 
+  questionnaireCatalog(): Promise<{ version: number, questions: QuestionnaireQuestion[] }> { return this.request('/questionnaire/catalog') }
+  questionnaireResults(id: number): Promise<QuestionnaireAttempt & { interests: Record<string, number> }> { return this.request(`/questionnaire/attempts/${id}/results`) }
+  questionnaireState(): Promise<QuestionnaireState> { return this.request('/questionnaire/state') }
+  startQuestionnaire(requestId: string, retake = false): Promise<QuestionnaireAttempt> { return this.request('/questionnaire/attempts', { method: 'POST', body: JSON.stringify({ request_id: requestId, retake }) }) }
+  saveQuestionnaire(id: number, requestId: string, revision: number, currentQuestionId: string, answer?: { question_id: string, answer: QuestionnaireAnswer }): Promise<QuestionnaireAttempt> { return this.request(`/questionnaire/attempts/${id}/progress`, { method: 'PUT', body: JSON.stringify({ request_id: requestId, expected_revision: revision, current_question_id: currentQuestionId, answer }) }) }
+  async completeQuestionnaire(id: number, requestId: string, revision: number): Promise<QuestionnaireAttempt> { const result = await this.request<QuestionnaireAttempt>(`/questionnaire/attempts/${id}/complete`, { method: 'POST', body: JSON.stringify({ request_id: requestId, expected_revision: revision }) }); this.invalidateProfile(); return result }
   me(): Promise<User> { return this.request('/auth/me') }
   gameState(): Promise<StoryState> { return this.request('/game/state') }
   completeGameIntro(): Promise<StoryState> { return this.request('/game/intro-complete', { method: 'PUT' }) }
@@ -323,8 +341,17 @@ export class ApiClient {
   recommendation(): Promise<Recommendation | null> { return this.request('/recommendation') }
   achievements(): Promise<Achievement[]> { return this.request('/achievements') }
   finalReport(): Promise<FinalReport> { return this.request('/final-report') }
-  activityProfile(): Promise<ActivityProfile> { return this.request('/activity-profile') }
-  reflectQuest(id: number, requestId: string, reflection: ActivityReflection): Promise<ActivityReflection> { return this.request(`/quests/${id}/reflection`, { method: 'POST', body: JSON.stringify({ request_id: requestId, ...reflection }) }) }
+  activityProfile(): Promise<ActivityProfile> {
+    const token = this.getToken()
+    if (token !== this.profileToken) { this.profileToken = token; this.invalidateProfile() }
+    if (!this.profileCache) {
+      const generation = this.profileGeneration
+      this.profileCache = this.request<ActivityProfile>('/activity-profile').then(value => generation === this.profileGeneration ? value : this.activityProfile()).catch(error => { if (generation !== this.profileGeneration) return this.activityProfile(); this.profileCache = null; throw error })
+    }
+    return this.profileCache
+  }
+  async reflectQuestV2(id: number, requestId: string, changes: { code: string, rating: number | 'unable' | null, reason: string | null }[], repeat: boolean | null): Promise<unknown> { const result = await this.request(`/quests/${id}/reflection-v2`, { method: 'PUT', body: JSON.stringify({ request_id: requestId, changes, repeat }) }); this.invalidateProfile(); return result }
+  async reflectQuest(id: number, requestId: string, reflection: ActivityReflection): Promise<ActivityReflection> { const result = await this.request<ActivityReflection>(`/quests/${id}/reflection`, { method: 'POST', body: JSON.stringify({ request_id: requestId, ...reflection }) }); this.invalidateProfile(); return result }
   adminDirections(): Promise<Direction[]> { return this.directions() }
   adminScenarios(): Promise<AdminScenario[]> { return this.request('/admin/scenarios') }
   adminTasks(scenarioId: number): Promise<AdminTask[]> { return this.request(`/admin/scenarios/${scenarioId}/tasks`) }
