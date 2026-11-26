@@ -1,14 +1,14 @@
 import { useEffect, useRef, useState } from 'react'
 import type { Achievement, ApiClient, GameActionResult, Quest } from '../api'
 import { Dialogue } from '../Dialogue'
+import { ActivityReflectionV2 } from './ActivityReflectionV2'
 import type { WorldLocation } from '../world'
 import { codeAnswers, debriefs, finalReactions, introductions, interestQuestions, reminders } from './questContent'
 import { BackendGame } from './games/BackendGame'
 import { FrontendGame } from './games/FrontendGame'
 import { AnalyticsGame } from './games/AnalyticsGame'
 import { QuestCompleteBanner, TaskStatus } from './TaskStatus'
-import { ActivityReflection } from './ActivityReflection'
-import type { ActivityHistory } from '../api'
+import type { ActivityHistory, CareerProfile } from '../api'
 import './task-ui.css'
 
 export interface GameProps { userId?: number, quest: Quest, send: (action: string, payload?: Record<string, unknown>) => Promise<void>, busy: boolean }
@@ -117,19 +117,50 @@ export function QuestConversation({ api, quests, location, close, reload, onAwar
   const [farewell, setFarewell] = useState<{ text: string, emotion: 'friendly' | 'thinking' | 'sad' } | null>(null)
   const [reflectionQuest, setReflectionQuest] = useState<number | null>(null)
   const [reflectionItem, setReflectionItem] = useState<ActivityHistory | null>(null)
-  const [showReflection, setShowReflection] = useState(false)
+  const [reflectionProfile, setReflectionProfile] = useState<CareerProfile | null>(null)
+  const [reflectionDone, setReflectionDone] = useState(false)
+  const [newReflectionOffer, setNewReflectionOffer] = useState(false)
+  const [newReflectionOpen, setNewReflectionOpen] = useState(false)
   const [reflectionLoading, setReflectionLoading] = useState(false)
   const [reflectionError, setReflectionError] = useState('')
+  const [reflectionBusy, setReflectionBusy] = useState(false)
+  const reflectionLock = useRef(false)
+  const [reflectionLoadError, setReflectionLoadError] = useState(false)
   const [reflectionRevision, setReflectionRevision] = useState(0)
-  useEffect(() => { if (reflectionQuest !== null && typeof api.activityProfile === 'function') { setReflectionLoading(true); setReflectionError(''); api.activityProfile().then(p => setReflectionItem(p.history.find(h => h.quest_id === reflectionQuest) ?? null)).catch(() => setReflectionError('Не удалось загрузить вопрос.')).finally(() => setReflectionLoading(false)) } }, [api, reflectionQuest, reflectionRevision])
+  useEffect(() => {
+    if (reflectionQuest === null || typeof api.activityProfile !== 'function') return
+    let active = true
+    setReflectionLoading(true); setReflectionError(''); setReflectionLoadError(false)
+    api.activityProfile().then(p => { if (active) { setReflectionItem(p.history.find(h => h.quest_id === reflectionQuest) ?? null); setReflectionProfile(p.career_profile ?? null) } }).catch(() => { if (active) { setReflectionError('Не удалось загрузить вопрос.'); setReflectionLoadError(true) } }).finally(() => { if (active) setReflectionLoading(false) })
+    return () => { active = false }
+  }, [api, reflectionQuest, reflectionRevision])
   const [reactionLine, setReactionLine] = useState<{ value: string, text: string } | null>(null)
   const quest = active.find(q => q.id === selectedId) ?? active.find(q => q.tracked) ?? active[0]
   const { send, busy, error } = useQuestAction(api, quest, reload, onAwards, userId)
   if (topics) return <Dialogue location={location} onClose={close} onBack={quest?.gameplay ? () => setTopics(false) : undefined} />
   const invoke = (action: string, payload?: Record<string, unknown>) => { void send(action, payload).catch(() => {}) }
   const alternatives = active.length > 1 ? active.filter(q => q.id !== quest?.id).map(q => ({ text: `Продолжить «${q.title}»`, select: () => setSelectedId(q.id) })) : []
-  if (farewell && showReflection && reflectionItem) return <div className="modal-backdrop"><ActivityReflection api={api} item={reflectionItem} onSaved={async () => { const p = await api.activityProfile(); setReflectionItem(p.history.find(h => h.quest_id === reflectionQuest) ?? null) }} onClose={close} /></div>
-  if (farewell) return <Dialogue location={location} onClose={close} scene={{ ...farewell, text: reflectionLoading ? `${farewell.text} Загружаем вопрос о впечатлении…` : farewell.text, error: reflectionError, choices: [...(reflectionError ? [{ text: 'Повторить загрузку вопроса', select: () => setReflectionRevision(v => v + 1) }] : []), ...(reflectionItem?.activities.length ? [{ text: 'Отметить впечатление о действии', select: () => setShowReflection(true) }] : []), { text: 'До встречи!', select: close }], advance: close }} />
+  const saveReflection = (response: 'repeat' | 'unsure', activityCode: string | null) => {
+    if (reflectionQuest === null || reflectionLock.current) return
+    const payload = { response, activity_code: activityCode, barrier: null }
+    const key = `reflection:${userId}:${reflectionQuest}:${JSON.stringify(payload)}`
+    const requestId = pendingQuestRequestIds.get(key) ?? storedRequestId(key) ?? crypto.randomUUID()
+    pendingQuestRequestIds.set(key, requestId); storeRequestId(key, requestId)
+    reflectionLock.current = true; setReflectionBusy(true); setReflectionError('')
+    void api.reflectQuest(reflectionQuest, requestId, payload).then(() => {
+      clearRequestId(key); setReflectionDone(true)
+    }).catch(() => setReflectionError('Не удалось сохранить впечатление. Попробуй ещё раз.')).finally(() => { reflectionLock.current = false; setReflectionBusy(false) })
+  }
+  if (newReflectionOffer && !reflectionDone) {
+    if (newReflectionOpen && reflectionItem) return <div className="modal-backdrop task-backdrop" role="dialog" aria-modal="true" aria-label="Впечатления"><section className="panel task-window"><ActivityReflectionV2 api={api} item={reflectionItem} existing={reflectionProfile?.reflections} existingRepeat={reflectionProfile?.repeat?.[reflectionItem.quest_id] ?? null} onSaved={async () => {}} onClose={() => { setReflectionDone(true); setNewReflectionOpen(false) }} /></section></div>
+    return <Dialogue location={location} onClose={close} scene={{ text: reflectionLoading ? 'Загружаю действия…' : reflectionLoadError ? 'Не удалось загрузить действия. Дело уже завершено.' : 'Хочешь поделиться впечатлениями от действий?', emotion: 'thinking', choices: [...(!reflectionLoading && reflectionItem?.activities.length ? [{ text: 'Поделиться впечатлениями', select: () => setNewReflectionOpen(true) }] : []), ...(reflectionLoadError ? [{ text: 'Повторить загрузку', select: () => setReflectionRevision(v => v + 1) }] : []), { text: 'Позже', select: () => setReflectionDone(true) }] }} />
+  }
+  if (farewell && !reflectionDone && reflectionQuest !== null) {
+    if (reflectionLoading) return <Dialogue location={location} onClose={close} scene={{ text: 'Подожди, загружаю вопрос о твоём впечатлении…', choices: [{ text: 'Пропустить вопрос', select: () => setReflectionDone(true) }] }} />
+    if (reflectionLoadError) return <Dialogue location={location} onClose={close} scene={{ text: 'Не удалось загрузить вопрос о впечатлении.', error: reflectionError, choices: [{ text: 'Повторить', select: () => setReflectionRevision(v => v + 1) }, { text: 'Пропустить вопрос', select: () => setReflectionDone(true) }] }} />
+    if (reflectionItem?.activities.length) return <Dialogue location={location} onClose={close} scene={{ text: 'Какое действие тебе хотелось бы попробовать ещё раз?', emotion: 'thinking', busy: reflectionBusy, error: reflectionError, choices: [...reflectionItem.activities.map(activity => ({ text: activity.label, select: () => saveReflection('repeat', activity.code) })), { text: 'Пока не знаю', select: () => saveReflection('unsure', null) }, { text: 'Пропустить вопрос', select: () => setReflectionDone(true) }] }} />
+  }
+  if (farewell) return <Dialogue location={location} onClose={close} scene={{ ...farewell, choices: [{ text: 'До встречи!', select: close }], advance: close }} />
   if (deferred) return <Dialogue location={location} onClose={close} scene={{ text: 'Эх… ладно. Если передумаешь — я здесь.', emotion: 'sad', choices: [{ text: 'До встречи!', select: close }], advance: close }} />
   if (!greeted && (!quest?.gameplay || quest.gameplay.state.stage === 'intro' && !quest.gameplay.state.intro_line)) {
     const greeting = smallTalk[location.slug as keyof typeof smallTalk] ?? smallTalk.analytics
@@ -145,6 +176,7 @@ export function QuestConversation({ api, quests, location, close, reload, onAwar
   if (!quest?.gameplay) return <Dialogue location={location} onClose={close} />
   const state = quest.gameplay.state
   const kind = quest.gameplay.kind
+  const finishWithoutReaction = () => { void send('finish').then(() => { setFarewell({ text: 'Спасибо за работу! К впечатлениям можно вернуться позже.', emotion: 'friendly' }); if (typeof api.activityProfile === 'function') { setReflectionQuest(quest.id); setReflectionLoading(true); setNewReflectionOffer(true) } }).catch(() => {}) }
   if (state.stage === 'intro' || state.stage === 'return') {
     const intro = state.stage === 'intro'
     const lines = intro ? introductions[kind] : debriefs[kind]
@@ -162,15 +194,15 @@ export function QuestConversation({ api, quests, location, close, reload, onAwar
         { text: 'Не, давай потом.', select: () => { void send('intro-defer').then(() => setDeferred(true)).catch(() => {}) } },
       ] }} />
     }
-    if (!intro && line === lines.length - 1) return <Dialogue location={location} onClose={close} scene={{ ...current, text: `${current.text} ${interestQuestions[kind]}`, busy, error, choices: interestChoices.map(([value, text]) => ({ text, select: () => { void send('report').then(() => setReactionLine({ value, text })).catch(() => {}) } })) }} />
+    if (!intro && line === lines.length - 1) return <Dialogue location={location} onClose={close} scene={{ ...current, busy, error, choices: [{ text: 'Завершить дело', select: () => { void send('report').then(finishWithoutReaction).catch(() => {}) } }] }} />
     if (intro && line === lines.length - 1) return <Dialogue location={location} onClose={close} scene={{ ...current, busy, error, choices: [{ text: 'Пойду посмотрю.', select: () => { void send('intro-complete').then(close).catch(() => {}) } }] }} />
     const next = lines[line + 1]
     const advance = () => invoke(next ? intro ? 'intro-line' : 'dialogue-line' : intro ? 'intro-complete' : 'report', next ? { value: String(line + 1), ...(!intro ? { key: 'debrief' } : {}) } : {})
     return <Dialogue location={location} onClose={close} scene={{ ...current, busy, error, advance: next?.speaker === 'player' && current.speaker !== 'player' ? undefined : advance, choices: next?.speaker === 'player' && current.speaker !== 'player' ? [{ text: next.text, select: advance }] : [], canExit: line === 0 }} />
   }
   if (state.stage === 'result') {
-    if (reactionLine) return <Dialogue location={location} onClose={close} scene={{ text: reactionLine.text, speaker: 'player', busy, error, choices: [], advance: () => { void send('react', { value: reactionLine.value }).then(() => { setReflectionQuest(quest.id); setFarewell({ text: finalReactions[kind][reactionLine.value === 'not-mine' ? 'negative' : reactionLine.value === 'enough' ? 'neutral' : 'positive'], emotion: reactionLine.value === 'not-mine' ? 'sad' : reactionLine.value === 'enough' ? 'thinking' : 'friendly' }) }).catch(() => {}) } }} />
-    return <Dialogue location={location} onClose={close} scene={{ text: interestQuestions[kind], emotion: 'thinking', busy, error, choices: interestChoices.map(([value, text]) => ({ text, select: () => setReactionLine({ value, text }) })) }} />
+    if (reactionLine) return <Dialogue location={location} onClose={close} scene={{ text: reactionLine.text, speaker: 'player', busy, error, choices: [], advance: () => { void send('react', { value: reactionLine.value }).then(() => { if (reactionLine.value !== 'not-mine' && typeof api.activityProfile === 'function') { setReflectionLoading(true); setReflectionQuest(quest.id) } setFarewell({ text: finalReactions[kind][reactionLine.value === 'not-mine' ? 'negative' : reactionLine.value === 'enough' ? 'neutral' : 'positive'], emotion: reactionLine.value === 'not-mine' ? 'sad' : reactionLine.value === 'enough' ? 'thinking' : 'friendly' }) }).catch(() => {}) } }} />
+    return <Dialogue location={location} onClose={close} scene={{ text: interestQuestions[kind], emotion: 'thinking', busy, error, choices: [...interestChoices.map(([value, text]) => ({ text, select: () => setReactionLine({ value, text }) })), { text: 'Пока не хочу отвечать', select: finishWithoutReaction }] }} />
   }
   return <Dialogue location={location} onClose={close} scene={{ text: 'Ну как, есть новости? Я пока здесь.', emotion: 'thinking', canExit: true, choices: [{ text: 'Пойду пробовать', select: close }, { text: 'Поговорим о профессии', select: () => setTopics(true) }, ...alternatives] }} />
 }
@@ -178,27 +210,18 @@ export function QuestConversation({ api, quests, location, close, reload, onAwar
 export function QuestInteraction({ api, quest, close, reload, onAwards, userId, target, alternatives = [], selectQuest }: Common & { quest: Quest | undefined, target: 'server' | 'terminal', alternatives?: Quest[], selectQuest?: (id: number) => void }) {
   const { send, busy, error } = useQuestAction(api, quest, reload, onAwards, userId)
   const [help, setHelp] = useState(false)
-  const [reflectionItem, setReflectionItem] = useState<ActivityHistory | null>(null)
-  const [showReflection, setShowReflection] = useState(false)
-  const [reflectionLoadError, setReflectionLoadError] = useState(false)
-  const [loadRevision, setLoadRevision] = useState(0)
-  const loadReflection = async () => { if (quest && typeof api.activityProfile === 'function') { const p = await api.activityProfile(); setReflectionItem(p.history.find(h => h.quest_id === quest.id) ?? null) } }
-  useEffect(() => { let active = true; setReflectionItem(null); setShowReflection(false); if (quest && typeof api.activityProfile === 'function') api.activityProfile().then(p => { if (active) { setReflectionItem(p.history?.find(h => h.quest_id === quest.id) ?? null); setReflectionLoadError(false) } }).catch(() => { if (active) setReflectionLoadError(true) }); return () => { active = false } }, [api, quest, loadRevision])
   useEffect(() => { setHelp(false) }, [quest?.id])
   const state = quest?.gameplay?.state
   const invoke = (action: string, payload?: Record<string, unknown>) => { void send(action, payload).catch(() => {}) }
   return <div className="modal-backdrop task-backdrop" role="dialog" aria-modal="true" aria-label={quest?.title ?? 'Рабочая станция'}><section className={`panel task-window${target === 'server' ? ' task-server-window' : ''}`}>
-    <header className="task-header"><div><span className="eyebrow">CAMPUS LAB / {quest?.location_slug.toUpperCase()}</span><h2>{target === 'server' ? 'Серверная стойка' : quest?.title ?? 'Рабочая станция'}</h2></div><button type="button" onClick={close}>Закрыть станцию</button></header>
+    <header className="task-header"><div><span className="eyebrow">CAMPUS LAB / {quest?.location_slug.toUpperCase()}</span><h2>{target === 'server' ? 'Серверная стойка' : quest?.title ?? 'Рабочая станция'}</h2></div><div className="task-header-actions">{target === 'terminal' && state?.stage === 'mini-game' && quest?.gameplay?.kind !== 'code' && <HintPanel kind={quest?.gameplay?.kind ?? ''} count={state.hints} expanded={help} onToggle={() => setHelp(value => !value)} onAsk={() => invoke('hint')} busy={busy} />}<button type="button" onClick={close}>Закрыть станцию</button></div></header>
     <div className="task-body">
     {alternatives.length > 1 && <nav className="task-tabs" aria-label="Открыть задание">{alternatives.map(q => <button key={q.id} type="button" aria-pressed={q.id === quest?.id} onClick={() => selectQuest?.(q.id)}>{q.title}</button>)}</nav>}
     {!quest || !state ? <p>Выберите дело в телефоне → «Задачи» → «Начать задание».</p> : state.stage === 'intro' ? <p>Сначала поговорите с наставником: {quest.giver_npc_id === 'boris' ? 'Борисом' : quest.giver_npc_id === 'frontina' ? 'Фронтиной' : 'Анной'}.</p> : target === 'server' && quest.gameplay?.kind !== 'diagnosis' ? <><h3 className="task-success">API ● ONLINE</h3><p>Сервисы работают. Задача с функцией открывается на терминале за центральным столом.</p></> : target === 'server' ? <><h3 className={state.success ? 'task-success' : 'error'}>API {state.success ? '● ONLINE' : '● ERROR'}</h3><p>DATABASE ● ONLINE · CACHE ● ONLINE</p><p>{state.success ? 'Запросы снова проходят, индикатор зелёный.' : 'Красный индикатор только у API. За центральным столом терминал: там можно сравнить состояние сервисов и журнал.'}</p></> : state.stage === 'interaction' ? <><p>Инструменты готовы. Можно возвращаться к исследованию позже.</p><button type="button" disabled={busy} onClick={() => invoke('open')}>Начать работу на станции</button></> : <>
       {state.stage === 'return' ? <QuestCompleteBanner npc={quest.giver_npc_id === 'boris' ? 'Борису Бэкендовичу' : quest.giver_npc_id === 'frontina' ? 'Фронтине Пиксельевне' : 'Анне Литиковой'} /> : <div className="task-stage"><span>Исследование → гипотеза → проверка</span></div>}
-      {state.stage === 'mini-game' && quest.gameplay?.kind !== 'code' && <HintPanel kind={quest.gameplay?.kind ?? ''} count={state.hints} expanded={help} onToggle={() => setHelp(value => !value)} onAsk={() => invoke('hint')} busy={busy} />}
       {(state.stage === 'mini-game' || state.stage === 'return') && <fieldset className="task-workspace">{quest.gameplay?.kind === 'diagnosis' || quest.gameplay?.kind === 'code' ? <BackendGame userId={userId} quest={quest} send={send} busy={busy} /> : quest.gameplay?.kind === 'responsive' || quest.gameplay?.kind === 'ux' ? <FrontendGame userId={userId} quest={quest} send={send} busy={busy} /> : <AnalyticsGame quest={quest} send={send} busy={busy} />}</fieldset>}
       {state.stage === 'result' && <p>Наставник ждёт ваше впечатление. Вернитесь к нему.</p>}
     </>}
-    {reflectionLoadError && <p role="alert">Не удалось загрузить вопрос о впечатлении. <button type="button" onClick={() => setLoadRevision(v => v + 1)}>Повторить</button></p>}
-    {reflectionItem?.activities.length && <div>{showReflection ? <ActivityReflection api={api} item={reflectionItem} onSaved={loadReflection} onClose={() => setShowReflection(false)} /> : <button type="button" onClick={() => setShowReflection(true)}>Отметить впечатление</button>}</div>}
     </div>
     <TaskStatus state={state} kind={quest?.gameplay?.kind} busy={busy} error={error} />
   </section></div>

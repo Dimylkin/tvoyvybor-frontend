@@ -1,3 +1,4 @@
+import { Questionnaire } from './campusos/Questionnaire'
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ApiClient, ApiError, type Achievement, type ActivityProfile, type AdminScenario, type AdminScenarioInput, type AdminTask, type AdminTaskInput, type Direction, type Quest, type Scenario, type User } from './api'
 import { GameCanvas } from './GameCanvas'
@@ -8,8 +9,10 @@ export { Dialogue } from './Dialogue'
 import { returnPosition, type CampusEntry, type CampusPosition } from './campusReturn'
 import { CampusPhone } from './campusos/CampusPhone'
 import { ActivitySummary } from './campusos/ActivitySummary'
+import { CareerProfile } from './campusos/CareerProfile'
+import { ActivityReflectionV2 } from './campusos/ActivityReflectionV2'
 import { ActivityReflection } from './campusos/ActivityReflection'
-import { activityLabel, insightStatusText, questStatus } from './campusos/activityLabels'
+import { activityLabel, questStatus } from './campusos/activityLabels'
 import { QuestConversation, QuestInteraction } from './campusos/QuestInteraction'
 import { locationFor, mainBuilding } from './world'
 import './style.css'
@@ -147,6 +150,10 @@ export function HubScreen({ api, user, onOnboardingComplete, initialBuildingId =
 function GameShell({ api, user, onOnboardingComplete, logout, directions, initialBuildingId, firstVisit, active }: { api: ApiClient, user: User, onOnboardingComplete: (user: User) => void, logout: () => void, directions: Direction[], initialBuildingId: number | 'main' | null, firstVisit: boolean, active: boolean }) {
   const requestedQuest = Number(new URLSearchParams(window.location.hash.split('?')[1] ?? '').get('questId')) || null
   const [phone, setPhone] = useState(requestedQuest !== null)
+  const [phoneProfile, setPhoneProfile] = useState(false)
+  const [questionnaire, setQuestionnaire] = useState(false)
+  const [questionnaireRevision, setQuestionnaireRevision] = useState(0)
+  const [questionnaireOffer, setQuestionnaireOffer] = useState(false)
   useEffect(() => { if (active && requestedQuest !== null) setPhone(true) }, [active, requestedQuest])
   const [workQuestId, setWorkQuestId] = useState<number | null>(null)
   const [interaction, setInteraction] = useState<'npc' | 'server' | 'terminal' | null>(null)
@@ -168,7 +175,7 @@ function GameShell({ api, user, onOnboardingComplete, logout, directions, initia
   const initialRouteProcessed = useRef(false)
   const lastRouteBuilding = useRef(initialBuildingId)
   const [dialogue, setDialogue] = useState(false); const [action, setAction] = useState<string | null>(null); const [transition, setTransition] = useState<'idle' | 'closing' | 'loading' | 'opening'>('idle'); const [fullscreen, setFullscreen] = useState(false); const shell = useRef<HTMLDivElement>(null)
-  useEffect(() => { const handle = (event: KeyboardEvent) => { if (!active || dialogue || interaction) return; if (event.key === 'Tab' && !phone && !event.repeat) { event.preventDefault(); setPhone(true) } }; window.addEventListener('keydown', handle, true); return () => window.removeEventListener('keydown', handle, true) }, [active, phone, interaction, dialogue])
+  useEffect(() => { const handle = (event: KeyboardEvent) => { if (!active || dialogue || interaction || questionnaire || questionnaireOffer) return; if (event.key === 'Tab' && !phone && !event.repeat) { event.preventDefault(); setPhone(true) } }; window.addEventListener('keydown', handle, true); return () => window.removeEventListener('keydown', handle, true) }, [active, phone, interaction, dialogue, questionnaire, questionnaireOffer])
   const actionTrigger = useRef<() => void>(() => {})
   const actionButton = useRef<HTMLButtonElement>(null)
   const campusEntry = useRef<CampusEntry | null>(null)
@@ -238,7 +245,7 @@ function GameShell({ api, user, onOnboardingComplete, logout, directions, initia
     let timer: number | undefined
     const actionElement = actionButton.current
     const handle = (event: KeyboardEvent) => {
-      if (timer !== undefined || event.repeat || event.code !== 'KeyE' || !active || dialogue || phone || interaction || transition !== 'idle' || !actionElement) return
+      if (timer !== undefined || event.repeat || event.code !== 'KeyE' || !active || dialogue || questionnaire || questionnaireOffer || phone || interaction || transition !== 'idle' || !actionElement) return
       event.preventDefault()
       const button = actionElement
       button.classList.add('key-pressed')
@@ -246,19 +253,21 @@ function GameShell({ api, user, onOnboardingComplete, logout, directions, initia
     }
     window.addEventListener('keydown', handle)
     return () => { window.removeEventListener('keydown', handle); if (timer !== undefined) window.clearTimeout(timer); actionElement?.classList.remove('key-pressed') }
-  }, [active, dialogue, phone, interaction, transition, action])
+  }, [active, dialogue, questionnaire, questionnaireOffer, phone, interaction, transition, action])
   async function toggleFullscreen() { if (document.fullscreenElement) await document.exitFullscreen(); else await shell.current?.requestFullscreen() }
   return <section className="play-area" ref={shell} tabIndex={-1} aria-label="Игровая область">
     <WorldControls fullscreen={fullscreen} toggleFullscreen={() => void toggleFullscreen()} openPhone={() => setPhone(true)} isAdmin={user.role === 'admin'} />
-    {building && location ? <GameCanvas initialPosition={buildingSpawn} onPositionChange={(position) => { playerPosition.current = position; savePosition(building.slug, position) }} onActionReady={(invoke) => { actionTrigger.current = invoke }} onReady={() => setSceneReady(true)} directionSlug={building.slug} stationSolved={!!workQuest?.gameplay?.state.success} blocked={!active || dialogue || mentorStep !== null || phone || !!interaction || transition !== 'idle'} onActionChange={setAction} onInteract={() => building.slug === 'narrator' || quests.some(q => q.location_slug === building.slug && q.gameplay) ? setInteraction('npc') : setDialogue(true)} onObject={setInteraction} onExit={() => changePlace(null)} /> : <CampusCanvas onPositionChange={(position) => { playerPosition.current = position; updateCampusPosition(position); savePosition('campus', position) }} onActionReady={(invoke) => { actionTrigger.current = invoke }} initialPosition={campusSpawn} onReady={() => setSceneReady(true)} directions={directions} blocked={!active || phone || !!interaction || transition !== 'idle'} onActionChange={setAction} onEnter={(direction, position) => { campusEntry.current = { slug: direction.slug, position }; setBuildingSpawn({ x: 370, y: 250 }); playerPosition.current = { x: 370, y: 250 }; savePosition(direction.slug, playerPosition.current, true); changePlace(direction) }} />}
+    {building && location ? <GameCanvas initialPosition={buildingSpawn} onPositionChange={(position) => { playerPosition.current = position; savePosition(building.slug, position) }} onActionReady={(invoke) => { actionTrigger.current = invoke }} onReady={() => setSceneReady(true)} directionSlug={building.slug} stationSolved={!!workQuest?.gameplay?.state.success} blocked={!active || dialogue || mentorStep !== null || questionnaireOffer || questionnaire || phone || !!interaction || transition !== 'idle'} onActionChange={setAction} onInteract={() => building.slug === 'narrator' || quests.some(q => q.location_slug === building.slug && q.gameplay) ? setInteraction('npc') : setDialogue(true)} onObject={setInteraction} onExit={() => changePlace(null)} /> : <CampusCanvas onPositionChange={(position) => { playerPosition.current = position; updateCampusPosition(position); savePosition('campus', position) }} onActionReady={(invoke) => { actionTrigger.current = invoke }} initialPosition={campusSpawn} onReady={() => setSceneReady(true)} directions={directions} blocked={!active || questionnaire || phone || !!interaction || transition !== 'idle'} onActionChange={setAction} onEnter={(direction, position) => { campusEntry.current = { slug: direction.slug, position }; setBuildingSpawn({ x: 370, y: 250 }); playerPosition.current = { x: 370, y: 250 }; savePosition(direction.slug, playerPosition.current, true); changePlace(direction) }} />}
     {action && !dialogue && !interaction && !phone && <button ref={actionButton} type="button" className="action-prompt" onClick={() => actionTrigger.current()}><kbd>E</kbd><span>{action}</span></button>}
     {questError && <div role="alert" className="quest-error">{questError} <button type="button" onClick={() => void reloadQuests().catch(() => {})}>Повторить</button></div>}
-    {phone && <CampusPhone initialQuestId={requestedQuest} api={api} user={user} quests={quests} loading={questsLoading} loadError={questError} reload={reloadQuests} close={() => { setPhone(false); if (requestedQuest !== null) navigate('hub'); shell.current?.focus() }} logout={saveAndLogout} position={building && location ? location.campusPortal : campusPosition.current} currentBuilding={building?.slug} finalQuestUnlocked={!!story?.final_quest_unlocked && !story.final_quest_completed} onFinalQuest={() => setPhone(false)} profile={<><ProfileScreen api={api} compact /><ResultsScreen api={api} compact /></>} />}
-    {awards.length > 0 && <div className="quest-award-toast" role="status" aria-live="polite">{awards.map(a => <div key={a.slug}><strong>🏆 Новое достижение</strong><span>{a.title}</span><small>{a.description}</small></div>)}</div>}
-    {interaction === 'npc' && location && (location.slug === 'narrator' ? <MentorConversation api={api} location={location} quests={quests} story={story} onStory={setStory} onAwards={showAwards} close={() => setInteraction(null)} /> : <QuestConversation api={api} quests={quests.filter(q => q.location_slug === location.slug && q.gameplay)} location={location} userId={user.id} onAwards={showAwards} reload={reloadQuests} close={() => setInteraction(null)} />)}
+    {phone && <div style={{ display: questionnaire ? 'none' : undefined }}><CampusPhone profileRevision={questionnaireRevision} initialProfile={phoneProfile} initialQuestId={requestedQuest} api={api} user={user} quests={quests} loading={questsLoading} loadError={questError} reload={reloadQuests} close={() => { setPhone(false); setPhoneProfile(false); if (requestedQuest !== null) navigate('hub'); shell.current?.focus() }} logout={saveAndLogout} position={building && location ? location.campusPortal : campusPosition.current} currentBuilding={building?.slug} finalQuestUnlocked={!!story?.final_quest_unlocked && !story.final_quest_completed} finalQuestCompleted={!!story?.final_quest_completed} onFinalQuest={() => { setPhone(false); shell.current?.focus() }} onQuestionnaire={() => setQuestionnaire(true)} profile={<><ProfileScreen api={api} compact /><ResultsScreen api={api} compact /></>} /></div>}
+    {awards.length > 0 && <div className="quest-award-toast" role="status" aria-live="polite">{awards.map(a => <div className="quest-award-item" key={a.slug}><span className="quest-award-label">🏆 Достижение!</span><strong>{a.title}</strong><small>{a.description}</small></div>)}</div>}
+    {interaction === 'npc' && location && (location.slug === 'narrator' ? <MentorConversation api={api} location={location} quests={quests} story={story} onStory={setStory} onAwards={showAwards} onOpenProfile={() => { setInteraction(null); setPhoneProfile(true); setPhone(true) }} onQuestionnaire={() => { setInteraction(null); setQuestionnaire(true) }} close={() => setInteraction(null)} /> : <QuestConversation api={api} quests={quests.filter(q => q.location_slug === location.slug && q.gameplay)} location={location} userId={user.id} onAwards={showAwards} reload={reloadQuests} close={() => setInteraction(null)} />)}
     {interaction && interaction !== 'npc' && <QuestInteraction key={`${building?.slug}:${interaction}:${workQuest?.id}`} api={api} quest={workQuest} alternatives={workQuests} selectQuest={setWorkQuestId} target={interaction} userId={user.id} onAwards={showAwards} reload={reloadQuests} close={() => setInteraction(null)} />}
     {dialogue && location && <Dialogue location={location} onClose={() => { setDialogue(false); shell.current?.focus() }} /> }
-    {mentorStep !== null && location && <MentorIntro location={location} step={mentorStep} onStep={setMentorStep} onComplete={async () => { const state = await api.completeGameIntro(); onOnboardingComplete({ ...user, intro_completed: true }); setMentorStep(null); setStory(state); savePosition('narrator', playerPosition.current, true) }} />}
+    {mentorStep !== null && location && <MentorIntro location={location} step={mentorStep} onStep={setMentorStep} onComplete={async () => { const state = await api.completeGameIntro(); onOnboardingComplete({ ...user, intro_completed: true }); setMentorStep(null); setQuestionnaireOffer(true); setStory(state); savePosition('narrator', playerPosition.current, true) }} />}
+    {questionnaireOffer && location && <Dialogue location={location} onClose={() => setQuestionnaireOffer(false)} scene={{ text: 'Хочешь немного разобраться, какие задачи тебя цепляют? Это короткое знакомство, его можно пройти позже.', emotion: 'friendly', choices: [{ text: 'Давай', select: () => { setQuestionnaireOffer(false); setQuestionnaire(true) } }, { text: 'Чуть позже', select: () => setQuestionnaireOffer(false) }, { text: 'Я пока осмотрюсь', select: () => setQuestionnaireOffer(false) }] }} />}
+    {questionnaire && <Questionnaire api={api} onOpenProfile={() => { setQuestionnaire(false); setQuestionnaireRevision(v => v + 1); setPhoneProfile(true); setPhone(true) }} onClose={() => { setQuestionnaire(false); setQuestionnaireRevision(v => v + 1); shell.current?.focus() }} />}
     <div className={`iris-transition iris-${transition}`} aria-hidden="true" />
     {transition === 'loading' && <div className="loading-card" role="status">Новая локация готовится… <small>Совет: хороший лог часто честнее воспоминаний о том, «как всё работало вчера».</small><img className="loading-spinner" src="/content/loading-spinner.svg" alt="" /></div>}
   </section>
@@ -289,17 +298,15 @@ function MentorIntro({ location, step, onStep, onComplete }: { location: NonNull
   return <Dialogue location={location} onClose={() => {}} scene={{ text: line.text, emotion: line.emotion, busy, error, choices: line.choices.map(text => ({ text, select: () => setReply(text) })) }} />
 }
 
-function MentorConversation({ api, location, story, onStory, close }: { api: ApiClient, location: NonNullable<ReturnType<typeof locationFor>>, quests: Quest[], story: { final_quest_unlocked: boolean, final_quest_completed: boolean } | null, onStory: (state: { final_quest_unlocked: boolean, final_quest_completed: boolean }) => void, onAwards: (items: Achievement[]) => void, close: () => void }) {
+function MentorConversation({ api, location, story, onStory, close, onQuestionnaire, onOpenProfile }: { api: ApiClient, location: NonNullable<ReturnType<typeof locationFor>>, quests: Quest[], story: { final_quest_unlocked: boolean, final_quest_completed: boolean } | null, onStory: (state: { final_quest_unlocked: boolean, final_quest_completed: boolean }) => void, onAwards: (items: Achievement[]) => void, close: () => void, onQuestionnaire: () => void, onOpenProfile: () => void }) {
   const [answer, setAnswer] = useState<string | null>(null)
   const [finalStage, setFinalStage] = useState(false)
+  const [finalReply, setFinalReply] = useState<string | null>(null)
+  const [finalDone, setFinalDone] = useState(false)
   const [greeted, setGreeted] = useState(false)
   const [greetingReply, setGreetingReply] = useState<string | null>(null)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
-  const [activityProfile, setActivityProfile] = useState<ActivityProfile | null>(null)
-  const [profileError, setProfileError] = useState('')
-  const [profileRevision, setProfileRevision] = useState(0)
-  useEffect(() => { setProfileError(''); api.activityProfile().then(setActivityProfile).catch(e => setProfileError(errorMessage(e))) }, [api, profileRevision])
   const topics = [
     ['Что это вообще за место?', 'Кампус-песочница. Тут дают попробовать работу разных IT-команд без собеседования и без вопроса про пять лет.'],
     ['Что мне сейчас делать?', 'Открой телефон. В «Заданиях» всё, что сейчас доступно. Я бы выбрал то, что меньше всего похоже на мучение.'],
@@ -313,21 +320,21 @@ function MentorConversation({ api, location, story, onStory, close }: { api: Api
   ] as const
   if (!greeted) {
     if (greetingReply) return <Dialogue location={location} onClose={close} scene={{ text: greetingReply, speaker: 'player', choices: [], advance: () => setGreeted(true) }} />
-    return <Dialogue location={location} onClose={close} scene={{ text: 'Привет. Осваиваешься? Я постараюсь отвечать короче, чем обычно.', emotion: 'friendly', canExit: true, choices: [{ text: 'Понемногу. Что здесь можно попробовать?', select: () => setGreetingReply('Понемногу. Что здесь можно попробовать?') }, { text: 'Осваиваюсь. Есть совет новичку?', select: () => setGreetingReply('Осваиваюсь. Есть совет новичку?') }] }} />
+    return <Dialogue location={location} onClose={close} scene={{ text: 'Привет. Осваиваешься?', emotion: 'friendly', canExit: true, choices: [{ text: 'Понемногу. Что здесь можно попробовать?', select: () => setGreetingReply('Понемногу. Что здесь можно попробовать?') }, { text: 'Осваиваюсь. Есть совет новичку?', select: () => setGreetingReply('Осваиваюсь. Есть совет новичку?') }] }} />
   }
   if (greetingReply) return <Dialogue location={location} onClose={close} scene={{ text: 'Хорошее начало. Здесь не нужно выбирать профессию навсегда — лучше попробовать и посмотреть, что зацепит.', emotion: 'thinking', canExit: true, choices: [{ text: 'Покажи темы', select: () => setGreetingReply(null) }] }} />
+  if (finalDone) return <Dialogue location={location} onClose={close} scene={{ text: 'Загляни в профиль, когда захочешь продолжить исследование.', emotion: 'friendly', choices: [{ text: 'Открыть профиль', select: onOpenProfile }, { text: 'Вернуться в кампус', select: close }] }} />
   if (finalStage && story?.final_quest_unlocked && !story.final_quest_completed) {
-    if (profileError) return <Dialogue location={location} onClose={close} scene={{ text: 'Не удалось загрузить профиль.', emotion: 'thinking', choices: [{ text: 'Повторить', select: () => setProfileRevision(v => v + 1) }, { text: 'Позже', select: close }] }} />
-    if (!activityProfile) return <Dialogue location={location} onClose={close} scene={{ text: 'Загружаю твои наблюдения…', choices: [] }} />
-    const insights = activityProfile.insights ?? []
-    const nextLine = insights.length ? insights.map(i => `${i.label}: ${insightStatusText(i.status)} ${i.evidence.map(e => e.description).join(' ')}`).join(' ') : 'Пока нет положительных впечатлений о конкретных действиях.'
-    const careers = activityProfile.careers.length ? ` Направления для знакомства: ${activityProfile.careers.map(c => `${c.name}. ${c.explanation}`).join(' ')}` : ''
-    const nextStep = activityProfile.next_step ? ` Следующая проба: ${activityProfile.next_step.title}. ${activityProfile.next_step.explanation}` : ''
-    return <Dialogue location={location} onClose={close} scene={{ text: `${nextLine}${careers}${nextStep} Подробности — в профиле на телефоне.`, emotion: 'friendly', error, busy, choices: [{ text: 'Завершить разговор', select: () => { setBusy(true); void api.completeFinalQuest().then(state => { onStory(state); close() }).catch(e => { setError(errorMessage(e)); setBusy(false) }) } }] }} />
+    if (!finalReply) return <Dialogue location={location} onClose={close} scene={{ text: 'Ну что, как тебе кампус?', emotion: 'friendly', choices: [
+      { text: 'Кажется, нашёл своё', select: () => setFinalReply('Здорово! Попробуй углубиться в занятие, которое зацепило.') },
+      { text: 'Мне понравилось несколько задач', select: () => setFinalReply('Сравни эти занятия и попробуй каждое ещё раз.') },
+      { text: 'Пока не знаю', select: () => setFinalReply('Это нормально. Дай себе время и продолжай исследовать.') },
+      { text: 'Меня кое-что удивило', select: () => setFinalReply('Попробуй неожиданное направление ещё раз и сравни впечатления.') },
+    ] }} />
+    return <Dialogue location={location} onClose={close} scene={{ text: `${finalReply} Подробности и следующая проба — в профиле на телефоне.`, emotion: 'friendly', error, busy, choices: [{ text: 'Завершить разговор', select: () => { setBusy(true); setError(''); void api.completeFinalQuest().then(state => { setFinalDone(true); onStory(state); setBusy(false) }).catch(e => { setError(errorMessage(e)); setBusy(false) }) } }] }} />
   }
-  if (story?.final_quest_unlocked && !story.final_quest_completed) return <Dialogue location={location} onClose={close} scene={{ text: 'Все основные задания позади. Хочешь коротко подвести итоги?', emotion: 'friendly', canExit: true, choices: [{ text: 'Да, давай подведём итоги', select: () => setFinalStage(true) }, { text: 'Нет, чуть позже', select: close }] }} />
   if (answer) return <Dialogue location={location} onClose={close} onBack={() => setAnswer(null)} scene={{ text: answer, emotion: 'thinking', choices: [{ text: 'Ещё вопрос', select: () => setAnswer(null) }, ...(story?.final_quest_unlocked && !story.final_quest_completed ? [{ text: 'Подвести итоги путешествия', select: () => setFinalStage(true) }] : []), { text: 'До встречи', select: close }] }} />
-  return <Dialogue location={location} onClose={close} scene={{ text: 'Ну что, куда сегодня заглянем? Вопросы принимаются, но ответы будут короче моей очереди на кофе.', emotion: 'friendly', canExit: true, choices: topics.map(([q, a]) => ({ text: q, select: () => setAnswer(a) })) }} />
+  return <Dialogue location={location} onClose={close} scene={{ text: 'Ну что, куда сегодня заглянем? Вопросы принимаются, но ответы будут короче моей очереди на кофе.', emotion: 'friendly', canExit: true, choices: [...(story?.final_quest_unlocked && !story.final_quest_completed ? [{ text: 'Подвести итоги', select: () => setFinalStage(true) }] : []), { text: 'Опрос об интересах', select: onQuestionnaire }, ...topics.map(([q, a]) => ({ text: q, select: () => setAnswer(a) }))] }} />
 }
 
 function ProfileScreen({ api, compact = false }: { api: ApiClient, compact?: boolean }) {
@@ -338,7 +345,7 @@ function ProfileScreen({ api, compact = false }: { api: ApiClient, compact?: boo
   async function reload() { const result = await api.activityProfile(); setProfile(result); setError('') }
   useEffect(() => { let live = true; api.activityProfile().then(p => { if (live) setProfile(p) }).catch(e => { if (live) setError(errorMessage(e)) }); return () => { live = false } }, [api, revision])
   return <main className="content"><div className="page-heading"><h1>{compact ? 'Интересы' : 'Профиль интересов'}</h1><p>Наблюдения и идеи для следующей пробы.</p></div>
-    {error ? <LoadState error={error} retry={() => { setError(''); setRevision(v => v + 1) }} /> : !profile ? <p>Загружаем профиль…</p> : <><ActivitySummary profile={profile} openQuest={openQuestFromProfile} /><section className="panel"><h2>История проб</h2>{(profile.history ?? []).map(item => <article key={item.quest_id}><h3>{item.title}</h3><p>{item.reflection ? ({ repeat: 'Хочу повторить', unsure: 'Пока не знаю', not_mine: 'Это не моё' }[item.reflection.response]) : 'Впечатление ещё не сохранено'}{item.reflection?.activity_code && `: ${item.activities.find(a => a.code === item.reflection?.activity_code)?.label ?? activityLabel(item.reflection.activity_code)}`}</p>{item.legacy_reaction && <p>Ответ наставнику: {({ more: 'Хочется продолжить', interesting: 'Было интересно', 'not-mine': 'Пока не моё', enough: 'На сегодня достаточно' } as Record<string, string>)[item.legacy_reaction] ?? item.legacy_reaction}</p>}{editing === item.quest_id ? <ActivityReflection api={api} item={item} onSaved={reload} onClose={() => setEditing(null)} /> : item.published && item.activities.length > 0 && <button type="button" onClick={() => setEditing(item.quest_id)}>{item.reflection ? 'Изменить впечатление' : 'Отметить впечатление'}</button>}</article>)}</section></>}
+    {error ? <LoadState error={error} retry={() => { setError(''); setRevision(v => v + 1) }} /> : !profile ? <p>Загружаем профиль…</p> : <>{profile.career_profile ? <CareerProfile profile={profile.career_profile} openQuest={openQuestFromProfile} /> : <ActivitySummary profile={profile} openQuest={openQuestFromProfile} />}<details className="panel"><summary>История проб</summary>{(profile.history ?? []).map(item => <article key={item.quest_id}><h3>{item.title}</h3><p>{item.reflection ? ({ repeat: 'Хочу повторить', unsure: 'Пока не знаю', not_mine: 'Это не моё' }[item.reflection.response]) : 'Впечатление ещё не сохранено'}{item.reflection?.activity_code && `: ${item.activities.find(a => a.code === item.reflection?.activity_code)?.label ?? activityLabel(item.reflection.activity_code)}`}</p>{item.legacy_reaction && <p>Ответ наставнику: {({ more: 'Хочется продолжить', interesting: 'Было интересно', 'not-mine': 'Пока не моё', enough: 'На сегодня достаточно' } as Record<string, string>)[item.legacy_reaction] ?? item.legacy_reaction}</p>}{editing === item.quest_id ? profile.career_profile ? <ActivityReflectionV2 api={api} item={item} existing={profile.career_profile.reflections} existingRepeat={profile.career_profile.repeat?.[item.quest_id] ?? null} onSaved={reload} onClose={() => setEditing(null)} /> : <ActivityReflection api={api} item={item} onSaved={reload} onClose={() => setEditing(null)} /> : item.published && item.activities.length > 0 && <button type="button" onClick={() => setEditing(item.quest_id)}>{item.reflection ? 'Изменить впечатление' : 'Отметить впечатление'}</button>}</article>)}</details></>}
   </main>
 }
 
@@ -348,7 +355,7 @@ function ResultsScreen({ api, compact = false }: { api: ApiClient, compact?: boo
   const [revision, setRevision] = useState(0)
   useEffect(() => { let live = true; Promise.all([api.activityProfile(), api.achievements(), api.scenarios()]).then(([profile, achievements, scenarios]) => { if (live) setData({ profile, achievements, scenarios }) }).catch(e => { if (live) setError(errorMessage(e)) }); return () => { live = false } }, [api, revision])
   return <main className="content"><div className="page-heading"><h1>{compact ? 'Отчёт' : 'Результаты'}</h1><p>Твои пробы и достижения.</p></div>
-    {error ? <LoadState error={error} retry={() => { setError(''); setRevision(v => v + 1) }} /> : !data ? <p>Загружаем результаты…</p> : <><ActivitySummary profile={data.profile} openQuest={openQuestFromProfile} /><section className="panel"><h2>История прохождений</h2><p>Старые сценарии: {data.scenarios.filter(item => item.state === 'completed').length} из {data.scenarios.length}</p>{(data.profile.history ?? []).map(item => <p key={item.quest_id}>{item.title}: {questStatus(item.status)}</p>)}</section><section className="panel"><h2>Достижения</h2>{data.achievements.length ? data.achievements.map(item => <p key={item.slug}><strong>{item.title}</strong> — {item.description}</p>) : <p>Пока нет достижений.</p>}</section></>}
+    {error ? <LoadState error={error} retry={() => { setError(''); setRevision(v => v + 1) }} /> : !data ? <p>Загружаем результаты…</p> : <>{data.profile.career_profile ? <CareerProfile profile={data.profile.career_profile} openQuest={openQuestFromProfile} /> : <ActivitySummary profile={data.profile} openQuest={openQuestFromProfile} />}<section className="panel"><h2>История прохождений</h2><p>Старые сценарии: {data.scenarios.filter(item => item.state === 'completed').length} из {data.scenarios.length}</p>{(data.profile.history ?? []).map(item => <p key={item.quest_id}>{item.title}: {questStatus(item.status)}</p>)}</section><section className="panel"><h2>Достижения</h2>{data.achievements.length ? data.achievements.map(item => <p key={item.slug}><strong>{item.title}</strong> — {item.description}</p>) : <p>Пока нет достижений.</p>}</section></>}
   </main>
 }
 

@@ -14,3 +14,5 @@ export function insightStatusText(status: ActivityProfile['insights'][number]['s
 export function questStatus(status: string): string {
   return ({ completed: 'Завершено', abandoned: 'Отложено', active: 'В работе', available: 'Доступно', locked: 'Закрыто' } as Record<string, string>)[status] ?? status
 }
+
+export const careerTraitLabels: Record<string, string> = { code: 'Код', systems: 'Системы', data: 'Данные', interfaces: 'Интерфейсы', people: 'Люди', requirements: 'Требования', creation: 'Создание', analysis: 'Анализ', investigation: 'Поиск причин', fixing: 'Исправление', testing: 'Проверка', improvement: 'Улучшение', structuring: 'Структурирование', needs: 'Выявление потребностей', logical: 'Логический подход', systemic: 'Системный подход', creative: 'Творческий подход', details: 'Внимание к деталям', patterns: 'Закономерности', experiment: 'Эксперимент', independent: 'Самостоятельность', collaboration: 'Совместная работа' }

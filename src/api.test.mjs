@@ -78,3 +78,43 @@ test('stage 7 report and publication requests match the server contract', async 
     { url: '/api/admin/tasks/9/unpublish', method: 'PUT', body: undefined },
   ])
 })
+
+test('profile requests share a resource and late responses cannot restore stale data', async () => {
+  let resolveOld
+  let calls = 0
+  const client = new ApiClient('/api', () => 'saved-token', () => {}, async input => {
+    if (String(input).endsWith('/activity-profile')) {
+      calls++
+      if (calls === 1) return new Promise(resolve => { resolveOld = resolve })
+      return Response.json({ version: 'new' })
+    }
+    return Response.json({ state: {}, awards: [] })
+  })
+  const old = client.activityProfile()
+  const shared = client.activityProfile()
+  await client.questAction(1, 'request', 'finish')
+  const current = await client.activityProfile()
+  resolveOld(Response.json({ version: 'old' }))
+  assert.deepEqual(current, { version: 'new' })
+  assert.deepEqual(await old, current)
+  assert.deepEqual(await shared, current)
+  assert.equal(calls, 2)
+})
+
+test('a late failed profile request does not replace a newer profile', async () => {
+  let rejectOld
+  let calls = 0
+  const client = new ApiClient('/api', () => 'saved-token', () => {}, async input => {
+    if (String(input).endsWith('/activity-profile')) {
+      calls++
+      if (calls === 1) return new Promise((_resolve, reject) => { rejectOld = reject })
+      return Response.json({ version: 'new' })
+    }
+    return Response.json({ state: {}, awards: [] })
+  })
+  const old = client.activityProfile()
+  await client.questAction(1, 'request', 'finish')
+  assert.deepEqual(await client.activityProfile(), { version: 'new' })
+  rejectOld(new Error('old failure'))
+  assert.deepEqual(await old, { version: 'new' })
+})
