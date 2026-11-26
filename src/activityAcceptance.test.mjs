@@ -19,6 +19,8 @@ const vite = await createServer({ plugins: [{ name: 'expose-profile-screens', en
 const { MentorConversation, ProfileScreen, ResultsScreen } = await vite.ssrLoadModule('/src/App.tsx')
 const { QuestProfile } = await vite.ssrLoadModule('/src/campusos/QuestProfile.tsx')
 const { QuestInteraction } = await vite.ssrLoadModule('/src/campusos/QuestInteraction.tsx')
+const { Questionnaire } = await vite.ssrLoadModule('/src/campusos/Questionnaire.tsx')
+const { ActivityReflectionV2 } = await vite.ssrLoadModule('/src/campusos/ActivityReflectionV2.tsx')
 const { locationFor } = await vite.ssrLoadModule('/src/world.ts')
 afterEach(() => { cleanup(); localStorage.clear(); sessionStorage.clear() })
 after(async () => { await vite.close(); dom.window.close() })
@@ -35,6 +37,59 @@ function makeProfile(status = 'hypothesis') {
 }
 const noop = () => {}
 const labels = { hypothesis: 'Возможно, тебе интересно попробовать это снова.', repeated: 'Этот интерес повторился в разных ситуациях.', mixed: 'В разных ситуациях впечатления различались.' }
+
+test('questionnaire saves an edited answer when moving back', async () => {
+  const attempt = { id: 1, revision: 1, current_question_id: 'Q02', answers: { Q02: { status: 'answered', value: 2 } } }
+  const calls = []
+  const api = {
+    questionnaireCatalog: async () => ({ questions: [{ id: 'Q01', format: 'scale', text: 'Первый вопрос' }, { id: 'Q02', format: 'scale', text: 'Второй вопрос' }] }),
+    questionnaireState: async () => ({ status: 'in_progress', current: attempt, last_completed: null }),
+    saveQuestionnaire: async (...args) => { calls.push(args); return { ...attempt, revision: 2, current_question_id: 'Q01' } },
+  }
+  render(React.createElement(Questionnaire, { api, onClose: noop }))
+  await screen.findByText('Второй вопрос')
+  fireEvent.click(screen.getByRole('radio', { name: /Очень интересно/ }))
+  fireEvent.click(screen.getByRole('button', { name: 'Назад' }))
+  await screen.findByText('Первый вопрос')
+  assert.deepEqual(calls[0].slice(2), [1, 'Q01', { question_id: 'Q02', answer: { status: 'answered', value: 5 } }])
+})
+
+test('questionnaire keeps a neutral bipolar answer distinct from neither', async () => {
+  const attempt = { id: 1, revision: 0, catalog_version: 2, current_question_id: 'V2Q01', answers: {} }
+  const calls = []
+  const api = {
+    questionnaireCatalog: async () => ({ questions: [{ id: 'V2Q01', format: 'bipolar', context: 'Ситуация', text: 'Что ближе?', alternatives: [{ label: 'Первое' }, { label: 'Второе' }] }, { id: 'V2Q02', format: 'scale', text: 'Другой вопрос' }] }),
+    questionnaireState: async () => ({ status: 'in_progress', current: attempt, last_completed: null }),
+    saveQuestionnaire: async (...args) => { calls.push(args); return { ...attempt, revision: 1, current_question_id: 'V2Q02' } },
+  }
+  render(React.createElement(Questionnaire, { api, onClose: noop }))
+  await screen.findByText('Что ближе?')
+  assert.equal(screen.queryByRole('button', { name: /Ни один вариант/ }), null)
+  assert.equal(screen.queryByRole('button', { name: /Пока не могу определиться/ }), null)
+  fireEvent.click(screen.getByRole('radio', { name: 'Одинаково' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Дальше' }))
+  await screen.findByText('Другой вопрос')
+  assert.deepEqual(calls[0][4].answer, { status: 'answered', value: 0 })
+})
+
+test('editing a rating preserves repeat unless explicitly cleared', async () => {
+  const calls = []
+  const api = { reflectQuestV2: async (...args) => calls.push(args) }
+  const item = { quest_id: 7, activities: [{ code: 'coding', label: 'Код' }] }
+  const existing = [{ quest_id: 7, code: 'coding', rating: 4, reason: null }]
+  render(React.createElement(ActivityReflectionV2, { api, item, existing, existingRepeat: true, onSaved: async () => {}, onClose: noop }))
+  assert.equal(screen.getByLabelText('Хочется повторить похожую пробу?').value, 'true')
+  fireEvent.click(screen.getByRole('button', { name: '5' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Сохранить' }))
+  await waitFor(() => assert.equal(calls.length, 1))
+  assert.deepEqual(calls[0].slice(2), [[{ code: 'coding', rating: 5, reason: null }], null, false])
+  cleanup()
+  render(React.createElement(ActivityReflectionV2, { api, item, existing, existingRepeat: true, onSaved: async () => {}, onClose: noop }))
+  fireEvent.change(screen.getByLabelText('Хочется повторить похожую пробу?'), { target: { value: '' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Сохранить' }))
+  await waitFor(() => assert.equal(calls.length, 2))
+  assert.deepEqual(calls[1].slice(2), [[], null, true])
+})
 
 for (const status of Object.keys(labels)) {
   test(`four profile surfaces preserve the ${status} conclusion`, async () => {
@@ -58,7 +113,8 @@ for (const status of Object.keys(labels)) {
     fireEvent.click(screen.getByRole('button', { name: /Покажи темы/ }))
     fireEvent.click(screen.getByText('Подвести итоги'))
     fireEvent.click(screen.getByRole('button', { name: /Пока не знаю/ }))
-    await waitFor(() => assert.match(document.body.textContent, new RegExp(labels[status].replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))))
+    assert.match(document.body.textContent, /Подробности и следующая проба/)
+    assert.doesNotMatch(document.body.textContent, new RegExp(labels[status].replace(/[.*+?^${}()|[\]\\]/g, '\\$&')))
     assert.doesNotMatch(document.body.textContent, /В «Пятничном релизе» ты искал причину сбоя/)
   })
 }

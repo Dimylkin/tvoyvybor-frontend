@@ -1,9 +1,25 @@
-.questionnaire-backdrop { position:absolute; inset:0; z-index:80; display:flex; align-items:center; justify-content:center; background:#081425c9; padding:2%; }
-.questionnaire-window { width:min(720px, 96%); max-height:90%; display:flex; flex-direction:column; background:#f8f7ef; color:#1d3041; border:3px solid #243e51; border-radius:16px; box-shadow:0 10px 35px #0008; }
-.questionnaire-window header, .questionnaire-window footer { display:flex; gap:10px; align-items:center; justify-content:space-between; padding:14px; flex-wrap:wrap; }
-.questionnaire-window h2 { margin:0; font-size:1.2rem; }
-.questionnaire-body { overflow:auto; padding:14px; flex:1; }
-.questionnaire-options { display:flex; gap:8px; flex-wrap:wrap; }
-.questionnaire-window button { min-height:44px; padding:8px 14px; border:1px solid #557080; border-radius:8px; background:#fff; color:#183345; cursor:pointer; }
-.questionnaire-window button[aria-pressed="true"] { background:#276c72; color:white; }
-.questionnaire-window button:disabled { opacity:.5; cursor:default; }
+.questionnaire-backdrop { position:absolute; inset:0; z-index:80; display:flex; align-items:center; justify-content:center; background:#080e1ccc; padding:2%; }
+.task-backdrop .questionnaire-window { width:min(850px, 96%); max-height:96%; height:auto; container-type:inline-size; }
+.questionnaire-window .task-header { display:flex; align-items:center; justify-content:space-between; color:var(--lab-muted); }
+.questionnaire-window .task-header h2 { color:var(--lab-text); }
+.questionnaire-window .questionnaire-body { overflow:auto; padding:22px; }
+.questionnaire-window .questionnaire-question { color:var(--lab-text); font-size:clamp(19px, 2.3cqw, 25px); line-height:1.4; margin:0 0 16px; }
+.questionnaire-window .questionnaire-hint, .questionnaire-window .questionnaire-body > p { color:var(--lab-muted); line-height:1.5; }
+.questionnaire-alternatives { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+.questionnaire-alternatives p { margin:0; padding:16px; border:1px solid var(--lab-line); border-radius:10px; background:var(--lab-panel); color:var(--lab-text); line-height:1.45; }
+.questionnaire-alternatives strong { display:block; color:var(--lab-accent); font-size:12px; margin-bottom:6px; }
+.questionnaire-options { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+.questionnaire-window .questionnaire-options button { text-align:left; min-height:52px; background:var(--lab-panel); border:1px solid var(--lab-line); color:var(--lab-text); }
+.questionnaire-window .questionnaire-options button[aria-pressed="true"] { background:#3a4b75; border-color:#9cafef; }
+.questionnaire-scale { border:0; padding:16px 0; margin:0; display:flex; justify-content:space-between; gap:6px; }
+.questionnaire-scale legend { color:var(--lab-muted); font-size:13px; }
+.questionnaire-visually-hidden { position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%); white-space:nowrap; }
+.questionnaire-scale label { flex:1; min-width:0; min-height:70px; display:flex; flex-direction:column; align-items:center; justify-content:flex-start; text-align:center; gap:5px; cursor:pointer; color:var(--lab-muted); font-size:12px; line-height:1.35; }
+.questionnaire-scale input { width:24px; height:24px; accent-color:#8dd9d2; margin:10px; }
+.questionnaire-scale input:checked + span { color:var(--lab-text); font-weight:700; }
+.questionnaire-scale input:focus-visible { outline:3px solid #7ddccb; outline-offset:3px; }
+.questionnaire-footer { display:flex; flex-wrap:wrap; gap:8px; padding:12px 18px; border-top:1px solid var(--lab-line); background:#131e31; }
+.questionnaire-window .questionnaire-footer button { min-height:44px; }
+.questionnaire-window .questionnaire-footer button:last-child { margin-left:auto; }
+.questionnaire-window details button { margin:4px; }
+@container (max-width:460px) { .questionnaire-alternatives, .questionnaire-options { grid-template-columns:1fr; } .questionnaire-scale { flex-wrap:wrap; } .questionnaire-scale label { flex:1 1 30%; } .questionnaire-window .questionnaire-footer button:last-child { margin-left:0; } }

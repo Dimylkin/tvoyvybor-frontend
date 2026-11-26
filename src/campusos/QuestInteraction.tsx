@@ -8,7 +8,7 @@ import { BackendGame } from './games/BackendGame'
 import { FrontendGame } from './games/FrontendGame'
 import { AnalyticsGame } from './games/AnalyticsGame'
 import { QuestCompleteBanner, TaskStatus } from './TaskStatus'
-import type { ActivityHistory } from '../api'
+import type { ActivityHistory, CareerProfile } from '../api'
 import './task-ui.css'
 
 export interface GameProps { userId?: number, quest: Quest, send: (action: string, payload?: Record<string, unknown>) => Promise<void>, busy: boolean }
@@ -117,6 +117,7 @@ export function QuestConversation({ api, quests, location, close, reload, onAwar
   const [farewell, setFarewell] = useState<{ text: string, emotion: 'friendly' | 'thinking' | 'sad' } | null>(null)
   const [reflectionQuest, setReflectionQuest] = useState<number | null>(null)
   const [reflectionItem, setReflectionItem] = useState<ActivityHistory | null>(null)
+  const [reflectionProfile, setReflectionProfile] = useState<CareerProfile | null>(null)
   const [reflectionDone, setReflectionDone] = useState(false)
   const [newReflectionOffer, setNewReflectionOffer] = useState(false)
   const [newReflectionOpen, setNewReflectionOpen] = useState(false)
@@ -130,7 +131,7 @@ export function QuestConversation({ api, quests, location, close, reload, onAwar
     if (reflectionQuest === null || typeof api.activityProfile !== 'function') return
     let active = true
     setReflectionLoading(true); setReflectionError(''); setReflectionLoadError(false)
-    api.activityProfile().then(p => { if (active) setReflectionItem(p.history.find(h => h.quest_id === reflectionQuest) ?? null) }).catch(() => { if (active) { setReflectionError('Не удалось загрузить вопрос.'); setReflectionLoadError(true) } }).finally(() => { if (active) setReflectionLoading(false) })
+    api.activityProfile().then(p => { if (active) { setReflectionItem(p.history.find(h => h.quest_id === reflectionQuest) ?? null); setReflectionProfile(p.career_profile ?? null) } }).catch(() => { if (active) { setReflectionError('Не удалось загрузить вопрос.'); setReflectionLoadError(true) } }).finally(() => { if (active) setReflectionLoading(false) })
     return () => { active = false }
   }, [api, reflectionQuest, reflectionRevision])
   const [reactionLine, setReactionLine] = useState<{ value: string, text: string } | null>(null)
@@ -151,7 +152,7 @@ export function QuestConversation({ api, quests, location, close, reload, onAwar
     }).catch(() => setReflectionError('Не удалось сохранить впечатление. Попробуй ещё раз.')).finally(() => { reflectionLock.current = false; setReflectionBusy(false) })
   }
   if (newReflectionOffer && !reflectionDone) {
-    if (newReflectionOpen && reflectionItem) return <div className="modal-backdrop task-backdrop" role="dialog" aria-modal="true" aria-label="Впечатления"><section className="panel task-window"><ActivityReflectionV2 api={api} item={reflectionItem} onSaved={async () => {}} onClose={() => { setReflectionDone(true); setNewReflectionOpen(false) }} /></section></div>
+    if (newReflectionOpen && reflectionItem) return <div className="modal-backdrop task-backdrop" role="dialog" aria-modal="true" aria-label="Впечатления"><section className="panel task-window"><ActivityReflectionV2 api={api} item={reflectionItem} existing={reflectionProfile?.reflections} existingRepeat={reflectionProfile?.repeat?.[reflectionItem.quest_id] ?? null} onSaved={async () => {}} onClose={() => { setReflectionDone(true); setNewReflectionOpen(false) }} /></section></div>
     return <Dialogue location={location} onClose={close} scene={{ text: reflectionLoading ? 'Загружаю действия…' : reflectionLoadError ? 'Не удалось загрузить действия. Дело уже завершено.' : 'Хочешь поделиться впечатлениями от действий?', emotion: 'thinking', choices: [...(!reflectionLoading && reflectionItem?.activities.length ? [{ text: 'Поделиться впечатлениями', select: () => setNewReflectionOpen(true) }] : []), ...(reflectionLoadError ? [{ text: 'Повторить загрузку', select: () => setReflectionRevision(v => v + 1) }] : []), { text: 'Позже', select: () => setReflectionDone(true) }] }} />
   }
   if (farewell && !reflectionDone && reflectionQuest !== null) {

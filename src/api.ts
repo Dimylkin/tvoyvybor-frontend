@@ -1,7 +1,11 @@
-export interface QuestionnaireAnswer { status: 'answered' | 'skipped' | 'unsure', value?: number | string[] | null }
-export interface QuestionnaireQuestion { id: string, format: 'scale' | 'choice', text: string, prompt?: string, max_choices?: number, options?: { id: string, label: string }[] }
-export interface QuestionnaireAttempt { id: number, number: number, status: 'in_progress' | 'completed', current_question_id: string, revision: number, answers: Record<string, QuestionnaireAnswer>, started_at: string, completed_at: string | null }
-export interface QuestionnaireState { status: 'not_started' | 'in_progress' | 'completed', current: QuestionnaireAttempt | null, last_completed: QuestionnaireAttempt | null }
+export interface QuestionnaireAnswer { status: 'answered' | 'skipped' | 'unsure' | 'neither', value?: number | string[] | null }
+export interface QuestionnaireQuestion { id: string, format: 'scale' | 'choice' | 'bipolar', context?: string, text: string, prompt?: string, max_choices?: number, options?: { id: string, label: string }[], alternatives?: { id: string, label: string }[] }
+export interface QuestionnaireAttempt { id: number, number: number, catalog_version: number, interpretation_version: number, status: 'in_progress' | 'completed', current_question_id: string, revision: number, answers: Record<string, QuestionnaireAnswer>, started_at: string, completed_at: string | null }
+export interface QuestionnaireHistoryEntry { id: number, number: number, catalog_version: number, completed_at: string | null }
+export interface QuestionnaireState { status: 'not_started' | 'in_progress' | 'completed', current: QuestionnaireAttempt | null, last_completed: QuestionnaireAttempt | null, history?: QuestionnaireHistoryEntry[] }
+export interface CareerContext { label: 'positive' | 'weak' | 'mixed' | 'relative' | 'insufficient', positive_questions?: string[], negative_questions?: string[], neither_questions?: string[] }
+export interface CareerDirection { code: string, title: string, score: number | null, traits: string[], coverage: number, attempted?: number, rated?: number, action_count?: number, sufficient?: boolean, uneven?: boolean, mixed_repeat?: boolean, repeat_support?: boolean, divergent?: boolean, questionnaire?: Record<string, CareerContext>, trials?: { kind: string, score: number | null, observations: { quest_id: number, title: string, activity: string, rating: number, reason: string | null, questionnaire_order?: 'before' | 'after' | null }[] }[] }
+export type QuestionnaireResult = QuestionnaireAttempt & { interests?: Record<string, number>, summary?: Record<string, CareerContext>, catalog: QuestionnaireQuestion[] }
 
 export interface GameState {
   stage: 'intro' | 'interaction' | 'mini-game' | 'return' | 'result' | 'complete'
@@ -178,7 +182,7 @@ export interface ActivityHistory {
   reflection: ActivityReflection | null
 }
 export interface ReflectionV2 { quest_id: number, code: string, rating: number | 'unable' | null, reason: string | null, evidence_event_id: number }
-export interface CareerProfile { version: number, status: 'empty' | 'preliminary' | 'established', rated_quests: number, directions: { code: string, title: string, score: number | null, traits: string[], coverage: number }[], leaders: string[], careers: { code: string, title: string, score: number | null, traits: string[], tasks: string, skills: string[], exercises: string[], represented: boolean }[], traits: Record<string, { value: number, questionnaire: number | null, game: number | null, divergent: boolean, evidence: { quest_id: number, title: string, activity: string, rating: number, reason: string | null, recorded_at: string, questionnaire_order: 'before' | 'after' | null }[] }>, reflections: ReflectionV2[], next_step: { quest_id: number | null, title: string, explanation: string } | null }
+export interface CareerProfile { version: number, status: 'empty' | 'preliminary' | 'established', conclusion?: string, survey_available?: boolean, rated_quests: number, directions: CareerDirection[], leaders: string[], careers: { code: string, title: string, score: number | null, traits: string[], tasks: string, skills: string[], exercises: string[], represented: boolean, basis?: string, question_contexts?: string[], evidence?: { title: string, activity: string, rating: number }[] }[], survey_results?: { comparative: Record<string, { positive: number, negative: number, evidence: { question_id: string, value: number }[] }>, choices: Record<string, string[]>, absolute: Record<string, { value: number, signals: string[] }> } | null, traits: Record<string, { value: number, questionnaire: number | null, game: number | null, divergent: boolean, evidence: { quest_id: number, title: string, activity: string, rating: number, reason: string | null, recorded_at: string, questionnaire_order: 'before' | 'after' | null }[] }>, reflections: ReflectionV2[], repeat?: Record<string, boolean>, next_step: { quest_id: number | null, title: string, explanation: string } | null }
 export interface ActivityProfile {
   career_profile?: CareerProfile
   event_count: number
@@ -323,10 +327,10 @@ export class ApiClient {
   terminal(requestId: string): Promise<{ log: string, port: number }> { return this.request('/game/backend-terminal', { method: 'POST', body: JSON.stringify({ request_id: requestId }) }) }
   interact(requestId: string, eventType: string, targetKey: string, payload: Record<string, unknown> = {}): Promise<InteractionResult> { return this.request('/game/interactions', { method: 'POST', body: JSON.stringify({ request_id: requestId, event_type: eventType, target_key: targetKey, payload }) }) }
 
-  questionnaireCatalog(): Promise<{ version: number, questions: QuestionnaireQuestion[] }> { return this.request('/questionnaire/catalog') }
-  questionnaireResults(id: number): Promise<QuestionnaireAttempt & { interests: Record<string, number> }> { return this.request(`/questionnaire/attempts/${id}/results`) }
-  questionnaireState(): Promise<QuestionnaireState> { return this.request('/questionnaire/state') }
-  startQuestionnaire(requestId: string, retake = false): Promise<QuestionnaireAttempt> { return this.request('/questionnaire/attempts', { method: 'POST', body: JSON.stringify({ request_id: requestId, retake }) }) }
+  questionnaireCatalog(version = 3): Promise<{ version: number, questions: QuestionnaireQuestion[] }> { return this.request(`/questionnaire/catalog?version=${version}`) }
+  questionnaireResults(id: number): Promise<QuestionnaireResult> { return this.request(`/questionnaire/attempts/${id}/results`) }
+  questionnaireState(): Promise<QuestionnaireState> { return this.request('/questionnaire/state?version=3&history=true') }
+  startQuestionnaire(requestId: string, retake = false): Promise<QuestionnaireAttempt> { return this.request('/questionnaire/attempts', { method: 'POST', body: JSON.stringify({ request_id: requestId, retake, catalog_version: 3 }) }) }
   saveQuestionnaire(id: number, requestId: string, revision: number, currentQuestionId: string, answer?: { question_id: string, answer: QuestionnaireAnswer }): Promise<QuestionnaireAttempt> { return this.request(`/questionnaire/attempts/${id}/progress`, { method: 'PUT', body: JSON.stringify({ request_id: requestId, expected_revision: revision, current_question_id: currentQuestionId, answer }) }) }
   async completeQuestionnaire(id: number, requestId: string, revision: number): Promise<QuestionnaireAttempt> { const result = await this.request<QuestionnaireAttempt>(`/questionnaire/attempts/${id}/complete`, { method: 'POST', body: JSON.stringify({ request_id: requestId, expected_revision: revision }) }); this.invalidateProfile(); return result }
   me(): Promise<User> { return this.request('/auth/me') }
@@ -350,7 +354,7 @@ export class ApiClient {
     }
     return this.profileCache
   }
-  async reflectQuestV2(id: number, requestId: string, changes: { code: string, rating: number | 'unable' | null, reason: string | null }[], repeat: boolean | null): Promise<unknown> { const result = await this.request(`/quests/${id}/reflection-v2`, { method: 'PUT', body: JSON.stringify({ request_id: requestId, changes, repeat }) }); this.invalidateProfile(); return result }
+  async reflectQuestV2(id: number, requestId: string, changes: { code: string, rating: number | 'unable' | null, reason: string | null }[], repeat: boolean | null, clearRepeat = false): Promise<unknown> { const result = await this.request(`/quests/${id}/reflection-v2`, { method: 'PUT', body: JSON.stringify({ request_id: requestId, changes, repeat, ...(clearRepeat ? { clear_repeat: true } : {}) }) }); this.invalidateProfile(); return result }
   async reflectQuest(id: number, requestId: string, reflection: ActivityReflection): Promise<ActivityReflection> { const result = await this.request<ActivityReflection>(`/quests/${id}/reflection`, { method: 'POST', body: JSON.stringify({ request_id: requestId, ...reflection }) }); this.invalidateProfile(); return result }
   adminDirections(): Promise<Direction[]> { return this.directions() }
   adminScenarios(): Promise<AdminScenario[]> { return this.request('/admin/scenarios') }
