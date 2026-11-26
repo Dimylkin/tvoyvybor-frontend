@@ -327,10 +327,11 @@ export class ApiClient {
   terminal(requestId: string): Promise<{ log: string, port: number }> { return this.request('/game/backend-terminal', { method: 'POST', body: JSON.stringify({ request_id: requestId }) }) }
   interact(requestId: string, eventType: string, targetKey: string, payload: Record<string, unknown> = {}): Promise<InteractionResult> { return this.request('/game/interactions', { method: 'POST', body: JSON.stringify({ request_id: requestId, event_type: eventType, target_key: targetKey, payload }) }) }
 
-  questionnaireCatalog(version = 3): Promise<{ version: number, questions: QuestionnaireQuestion[] }> { return this.request(`/questionnaire/catalog?version=${version}`) }
+  questionnaireCatalog(version: number): Promise<{ version: number, questions: QuestionnaireQuestion[] }> { return this.request(`/questionnaire/catalog?version=${version}`) }
   questionnaireResults(id: number): Promise<QuestionnaireResult> { return this.request(`/questionnaire/attempts/${id}/results`) }
-  questionnaireState(): Promise<QuestionnaireState> { return this.request('/questionnaire/state?version=3&history=true') }
-  startQuestionnaire(requestId: string, retake = false): Promise<QuestionnaireAttempt> { return this.request('/questionnaire/attempts', { method: 'POST', body: JSON.stringify({ request_id: requestId, retake, catalog_version: 3 }) }) }
+  questionnaireCapabilities(): Promise<{ latest_catalog_version: number }> { return this.request('/questionnaire/capabilities') }
+  questionnaireState(version: number): Promise<QuestionnaireState> { return this.request(`/questionnaire/state?version=${version}&history=true`) }
+  startQuestionnaire(requestId: string, retake: boolean, version: number): Promise<QuestionnaireAttempt> { return this.request('/questionnaire/attempts', { method: 'POST', body: JSON.stringify({ request_id: requestId, retake, catalog_version: version }) }) }
   saveQuestionnaire(id: number, requestId: string, revision: number, currentQuestionId: string, answer?: { question_id: string, answer: QuestionnaireAnswer }): Promise<QuestionnaireAttempt> { return this.request(`/questionnaire/attempts/${id}/progress`, { method: 'PUT', body: JSON.stringify({ request_id: requestId, expected_revision: revision, current_question_id: currentQuestionId, answer }) }) }
   async completeQuestionnaire(id: number, requestId: string, revision: number): Promise<QuestionnaireAttempt> { const result = await this.request<QuestionnaireAttempt>(`/questionnaire/attempts/${id}/complete`, { method: 'POST', body: JSON.stringify({ request_id: requestId, expected_revision: revision }) }); this.invalidateProfile(); return result }
   me(): Promise<User> { return this.request('/auth/me') }

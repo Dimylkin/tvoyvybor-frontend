@@ -17,6 +17,7 @@ function describeAnswer(q: QuestionnaireQuestion, a?: QuestionnaireAnswer) {
 }
 
 export function Questionnaire({ api, onClose, onOpenProfile }: { api: ApiClient, onClose: () => void, onOpenProfile?: () => void }) {
+  const [latestVersion, setLatestVersion] = useState<number | null>(null)
   const [questions, setQuestions] = useState<QuestionnaireQuestion[]>([])
   const [state, setState] = useState<QuestionnaireState | null>(null)
   const [attempt, setAttempt] = useState<QuestionnaireAttempt | null>(null)
@@ -38,10 +39,11 @@ export function Questionnaire({ api, onClose, onOpenProfile }: { api: ApiClient,
     let active = true
     async function load() {
       try {
-        const saved = await api.questionnaireState()
-        const catalog = await api.questionnaireCatalog(saved.current?.catalog_version ?? 3)
+        const { latest_catalog_version: latest } = await api.questionnaireCapabilities()
+        const saved = await api.questionnaireState(latest)
+        const catalog = await api.questionnaireCatalog(saved.current?.catalog_version ?? latest)
         if (!active) return
-        setQuestions(catalog.questions); setState(saved); setAttempt(saved.current)
+        setLatestVersion(latest); setQuestions(catalog.questions); setState(saved); setAttempt(saved.current)
         setAnswer(saved.current?.answers[saved.current.current_question_id] ?? null); setError('')
       } catch { if (active) setError('Не удалось загрузить опрос. Попробуй ещё раз.') }
     }
@@ -57,11 +59,12 @@ export function Questionnaire({ api, onClose, onOpenProfile }: { api: ApiClient,
   const index = attempt ? questions.findIndex(q => q.id === attempt.current_question_id) : -1
   const question = questions[index]
   async function start(retake: boolean) {
+    if (latestVersion === null) return
     setBusy(true); setError('')
     try {
-      const catalog = await api.questionnaireCatalog(3)
-      const next = await api.startQuestionnaire(opId(`start:${retake}`), retake)
-      const actual = next.catalog_version !== 3 ? await api.questionnaireCatalog(next.catalog_version) : catalog
+      const catalog = await api.questionnaireCatalog(latestVersion)
+      const next = await api.startQuestionnaire(opId(`start:${retake}`), retake, latestVersion)
+      const actual = next.catalog_version !== latestVersion ? await api.questionnaireCatalog(next.catalog_version) : catalog
       pending.current = null; setQuestions(actual.questions); setAttempt(next); setAnswer(next.answers[next.current_question_id] ?? null)
     } catch (e) { setError(e instanceof Error ? e.message : 'Не удалось начать опрос.') } finally { setBusy(false) }
   }
@@ -69,7 +72,7 @@ export function Questionnaire({ api, onClose, onOpenProfile }: { api: ApiClient,
     setCompletionPending(true)
     const completed = await api.completeQuestionnaire(next.id, opId(`complete:${next.id}:${next.revision}`), next.revision)
     pending.current = null; setCompletionPending(false); setAttempt(null)
-    try { setState(await api.questionnaireState()) } catch { setState({ status: 'completed', current: null, last_completed: completed }) }
+    try { setState(await api.questionnaireState(latestVersion!)) } catch { setState({ status: 'completed', current: null, last_completed: completed }) }
   }
   async function retryFinish() {
     if (!attempt || busy) return
@@ -113,7 +116,7 @@ export function Questionnaire({ api, onClose, onOpenProfile }: { api: ApiClient,
       {error && <p role="alert">{error} {!state && <button type="button" onClick={() => setRevision(v => v + 1)}>Повторить</button>}{completionPending && <button type="button" disabled={busy} onClick={() => void retryFinish()}>Повторить завершение</button>}{state && error.includes('изменилось') && <button type="button" onClick={() => setRevision(v => v + 1)}>Загрузить актуальное состояние</button>}</p>}
       {!state ? <p>Загружаем вопросы…</p> : !attempt ? <>
         <p>{state.last_completed ? 'Опрос завершён. Ты можешь посмотреть свои ответы или начать заново.' : 'Ответь на вопросы о том, что тебе интересно. Любой вопрос можно пропустить.'}</p>
-        {result?.summary && <p>{(() => { const contextNames: Record<string, string> = { B: 'серверная логика', F: 'интерфейсы', D: 'данные', R: 'требования' }; const positives = Object.entries(result.summary).filter(([, value]) => value.label === 'positive' || value.label === 'mixed').map(([key]) => contextNames[key]); return positives.length ? `По ответам можно предварительно присмотреться к темам: ${positives.join(', ')}. Практика поможет уточнить впечатление.` : 'Ответов пока недостаточно для выраженного вывода. Начать можно с игровых проб.' })()}</p>}
+        {result?.summary && <p>{(() => { const contextNames: Record<string, string> = { B: 'серверная логика', F: 'интерфейсы', D: 'данные', R: 'требования' }; const positives = Object.entries(result.summary).filter(([, value]) => value.label === 'positive').map(([key]) => contextNames[key]); const mixed = Object.entries(result.summary).filter(([, value]) => value.label === 'mixed').map(([key]) => contextNames[key]); return [positives.length ? `Предварительный интерес: ${positives.join(', ')}.` : '', mixed.length ? `В ответах о темах ${mixed.join(', ')} есть разные впечатления.` : '', !positives.length && !mixed.length ? 'Ответов пока недостаточно для выраженного вывода.' : '', 'Практика поможет уточнить впечатление.'].filter(Boolean).join(' ') })()}</p>}
         {result && onOpenProfile && <button type="button" onClick={onOpenProfile}>Открыть профиль</button>}
         {result?.interests && <p>{Object.keys(result.interests).length ? `Предварительные интересы: ${Object.entries(result.interests).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([key]) => labels[key] ?? key).join(', ')}.` : 'Числовых ответов нет — можно начать с игровых проб.'}</p>}
         {result && <details><summary>Посмотреть ответы{result.catalog_version === 1 ? ' — предыдущая версия опроса' : ''}</summary>{result.catalog.map(q => <p key={q.id}><strong>{q.context && `${q.context}: `}{q.text}</strong>{q.alternatives && <><br />{q.alternatives[0].label} / {q.alternatives[1].label}</>}<br />{describeAnswer(q, result.answers[q.id])}</p>)}</details>}

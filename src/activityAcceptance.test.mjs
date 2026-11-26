@@ -42,6 +42,7 @@ test('questionnaire saves an edited answer when moving back', async () => {
   const attempt = { id: 1, revision: 1, current_question_id: 'Q02', answers: { Q02: { status: 'answered', value: 2 } } }
   const calls = []
   const api = {
+    questionnaireCapabilities: async () => ({ latest_catalog_version: 4 }),
     questionnaireCatalog: async () => ({ questions: [{ id: 'Q01', format: 'scale', text: 'Первый вопрос' }, { id: 'Q02', format: 'scale', text: 'Второй вопрос' }] }),
     questionnaireState: async () => ({ status: 'in_progress', current: attempt, last_completed: null }),
     saveQuestionnaire: async (...args) => { calls.push(args); return { ...attempt, revision: 2, current_question_id: 'Q01' } },
@@ -58,6 +59,7 @@ test('questionnaire keeps a neutral bipolar answer distinct from neither', async
   const attempt = { id: 1, revision: 0, catalog_version: 2, current_question_id: 'V2Q01', answers: {} }
   const calls = []
   const api = {
+    questionnaireCapabilities: async () => ({ latest_catalog_version: 4 }),
     questionnaireCatalog: async () => ({ questions: [{ id: 'V2Q01', format: 'bipolar', context: 'Ситуация', text: 'Что ближе?', alternatives: [{ label: 'Первое' }, { label: 'Второе' }] }, { id: 'V2Q02', format: 'scale', text: 'Другой вопрос' }] }),
     questionnaireState: async () => ({ status: 'in_progress', current: attempt, last_completed: null }),
     saveQuestionnaire: async (...args) => { calls.push(args); return { ...attempt, revision: 1, current_question_id: 'V2Q02' } },
@@ -70,6 +72,22 @@ test('questionnaire keeps a neutral bipolar answer distinct from neither', async
   fireEvent.click(screen.getByRole('button', { name: 'Дальше' }))
   await screen.findByText('Другой вопрос')
   assert.deepEqual(calls[0][4].answer, { status: 'answered', value: 0 })
+})
+
+test('a new questionnaire uses the catalogue version advertised by the server', async () => {
+  const requested = []
+  const questions = [{ id: 'V4Q01', format: 'bipolar', text: 'Новая ситуация?', alternatives: [{ id: 'left', label: 'Первый вариант' }, { id: 'right', label: 'Второй вариант' }] }]
+  const api = {
+    questionnaireCapabilities: async () => ({ latest_catalog_version: 4 }),
+    questionnaireState: async version => { requested.push(['state', version]); return { status: 'not_started', current: null, last_completed: null } },
+    questionnaireCatalog: async version => { requested.push(['catalog', version]); return { version, questions } },
+    startQuestionnaire: async (_id, retake, version) => { requested.push(['start', version]); return { id: 2, catalog_version: version, revision: 0, current_question_id: 'V4Q01', answers: {}, retake } },
+  }
+  render(React.createElement(Questionnaire, { api, onClose: noop }))
+  fireEvent.click(await screen.findByRole('button', { name: 'Начать' }))
+  await screen.findByRole('heading', { name: 'Новая ситуация?' })
+  assert.ok(requested.some(([action, version]) => action === 'state' && version === 4))
+  assert.ok(requested.some(([action, version]) => action === 'start' && version === 4))
 })
 
 test('editing a rating preserves repeat unless explicitly cleared', async () => {
